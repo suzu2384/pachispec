@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10192b">
+  <meta name="description" content="ぱちんこ機種のスペックを整理・比較するローカルライブラリ">
+  <title>ぱちんこスペックライブラリ</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">P</div>
+      <div>
+        <h1>ぱちんこスペックライブラリ</h1>
+        <p><span id="machineCount">0</span>機種</p>
+      </div>
+    </div>
+    <nav class="view-tabs" aria-label="表示切り替え">
+      <button class="view-tab active" type="button" data-view="library" aria-pressed="true">機種一覧</button>
+      <button class="view-tab" type="button" data-view="ranking" aria-pressed="false">評価ランキング</button>
+    </nav>
+    <div class="header-tools">
+      <label class="search-box header-search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="機種名・タグを検索"></label>
+      <button class="button button-ghost" id="tagsButton" type="button">タグ</button>
+      <button class="button button-ghost" id="criteriaButton" type="button">評価項目</button>
+      <select id="sortFieldSelect" class="header-select" aria-label="並び替える項目"><option value="date">導入日</option><option value="name">機種名</option><option value="rush">実質RUSH突入率</option><option value="payout">初当り出球期待値</option></select>
+      <button class="sort-direction-button descending" id="sortDirectionButton" type="button" aria-label="並び順：降順。昇順に切り替え" title="降順（クリックで昇順）">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path class="direction-arrow" d="M6 19V5M2.5 8.5 6 5l3.5 3.5"/>
+          <path d="M13 6h3M13 12h5M13 18h8"/>
+        </svg>
+      </button>
+      <details class="data-menu"><summary class="button button-ghost">データ管理</summary><div class="data-menu-popup">
+        <button id="exportButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg><span>エクスポート</span></button>
+        <button id="importButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4-4 4M5 17v3h14v-3"/></svg><span>インポート</span></button>
+      </div></details>
+      <button class="button button-primary" id="addButton" type="button">＋ 機種を追加</button>
+      <input id="importInput" type="file" accept="application/json,.json" hidden>
+    </div>
+  </header>
+
+  <main>
+    <section id="libraryView">
+    <div class="result-row">
+      <p id="resultSummary">0件を表示</p>
+    </div>
+
+    <section id="machineGrid" class="machine-grid" aria-live="polite"></section>
+
+    <section id="emptyState" class="empty-state" hidden>
+      <div class="empty-icon" aria-hidden="true">＋</div>
+      <h2 id="emptyTitle">機種がまだ登録されていません</h2>
+      <p id="emptyText">最初の機種を追加して、スペックライブラリを作り始めましょう。</p>
+      <button class="button button-primary" id="emptyActionButton" type="button">機種を追加</button>
+    </section>
+    </section>
+
+    <section id="rankingView" class="ranking-view" hidden>
+      <div class="ranking-header">
+        <div>
+          <span class="eyebrow">10段階評価</span>
+          <h2>評価ランキング</h2>
+          <p>項目を選ぶと、評価済みの機種を点数順に表示します。</p>
+        </div>
+      </div>
+      <div id="rankingCriterionTabs" class="criterion-tabs" role="tablist" aria-label="ランキング項目"></div>
+      <div id="rankingList" class="ranking-list"></div>
+    </section>
+  </main>
+
+  <dialog id="detailDialog" class="dialog detail-dialog">
+    <button class="icon-button dialog-close" type="button" data-close-dialog aria-label="閉じる">×</button>
+    <div id="detailContent"></div>
+  </dialog>
+
+  <dialog id="ratingDialog" class="dialog quick-rating-dialog">
+    <form id="ratingForm" method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">10段階評価</span>
+          <h2 id="ratingMachineName">機種を評価</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button>
+      </div>
+      <input id="ratingMachineId" type="hidden">
+      <div class="quick-rating-content">
+        <div class="section-heading"><p>0.5刻みで各項目を評価すると、総合評価が自動計算されます。</p></div>
+        <div id="quickRatingFields" class="rating-fields"></div>
+      </div>
+      <div class="dialog-actions">
+        <span class="action-spacer"></span>
+        <button class="button button-ghost" type="button" data-close-dialog>キャンセル</button>
+        <button class="button button-primary" type="submit">評価を保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="editorDialog" class="dialog editor-dialog">
+    <form id="editorForm" method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">機種情報</span>
+          <h2 id="editorTitle">機種を追加</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button>
+      </div>
+
+      <div class="editor-scroll">
+        <input id="machineId" type="hidden">
+        <section class="form-section">
+          <h3>基本情報</h3>
+          <div class="form-grid">
+            <label class="field field-wide"><span>機種名 *</span><input id="nameInput" required placeholder="例：e ○○○○"></label>
+            <label class="field"><span>導入日</span><input id="introductionDateInput" type="date"></label>
+            <label class="field"><span>シリーズ</span><input id="seriesInput" placeholder="シリーズ名"></label>
+            <div class="field field-wide">
+              <span>タグ</span>
+              <div class="editor-tag-box"><div id="editorTagChips" class="tag-chip-list"></div><button class="small-button" id="editorTagsButton" type="button">タグを編集</button></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <h3>主要スペック</h3>
+          <div class="form-grid four-columns">
+            <label class="field"><span>通常時 1/</span><input id="initialProbabilityInput" type="number" min="0" step="0.001" placeholder="319.7"></label>
+            <label class="field"><span>RUSH突入率 %</span><input id="rushEntryRateInput" type="number" min="0" max="100" step="0.1" placeholder="50"></label>
+            <label class="field"><span>RUSH継続率 %</span><input id="rushContinuationRateInput" type="number" min="0" max="100" step="0.1" placeholder="81"></label>
+            <label class="field"><span>RUSH中当り 1/</span><input id="rushHitProbabilityInput" type="number" min="0" step="0.001" placeholder="99.9"></label>
+            <label class="field"><span>RUSH中確率の種類</span><select id="rushHitTypeInput"><option value="実質当り確率">実質当り確率</option><option value="図柄揃い確率">図柄揃い確率</option><option value="大当り確率">大当り確率</option><option value="普図抽選確率">普図抽選確率</option><option value="確変中確率">確変中確率</option><option value="その他">その他</option></select></label>
+            <label class="field field-wide"><span>RUSH中確率の補足</span><input id="rushHitNoteInput" placeholder="普図抽選、図柄揃いのみ等"></label>
+          </div>
+          <div class="calculated-preview">
+            <span>実質RUSH突入確率</span>
+            <strong id="rushProbabilityPreview">—</strong>
+            <small>初当り確率 ÷ RUSH突入率で算出</small>
+          </div>
+          <div class="calculated-preview">
+            <span>初当り出球期待値</span>
+            <strong id="initialPayoutExpectationPreview">—</strong>
+            <small>確定値・最低値・概算を区別して表示</small>
+          </div>
+          <div class="form-grid">
+            <label class="field"><span>期待値の扱い</span><select id="initialPayoutKindInput"><option value="auto">自動計算</option><option value="exact">確定値</option><option value="minimum">最低値</option><option value="estimate">概算</option><option value="unavailable">未算出</option></select></label>
+            <label class="field"><span>期待値 個</span><input id="initialPayoutValueInput" type="number" min="0" step="0.1" placeholder="自動計算時は空欄"></label>
+            <label class="field field-wide"><span>期待値の補足</span><input id="initialPayoutNoteInput" placeholder="例：可変出球を最低3,000個として算出"></label>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-heading"><h3>特図1 振り分け</h3><button class="small-button" type="button" data-add-row="special1">＋ 行を追加</button></div>
+          <div id="special1Rows" class="repeater"></div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-heading"><h3>特図2 振り分け</h3><button class="small-button" type="button" data-add-row="special2">＋ 行を追加</button></div>
+          <p class="section-note">割合の合計が100%で、出球が単一の数値として登録されている場合、RUSH出球分布を自動計算します。</p>
+          <div id="special2Rows" class="repeater"></div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-heading"><h3>状態遷移</h3><button class="small-button" type="button" data-add-row="flows">＋ 遷移を追加</button></div>
+          <p class="section-note">通常時→RUSH→LTなど、モード間の流れを登録できます。</p>
+          <div id="flowRows" class="repeater"></div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-heading"><h3>その他のスペック</h3><button class="small-button" type="button" data-add-row="customSpecs">＋ 項目を追加</button></div>
+          <div id="customSpecRows" class="repeater"></div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-heading"><h3>10段階評価</h3></div>
+          <p class="section-note">各項目の星を選ぶと、総合評価が平均値から自動計算されます。同じ星をもう一度押すと未評価に戻せます。</p>
+          <div id="ratingFields" class="rating-fields"></div>
+        </section>
+
+        <section class="form-section">
+          <h3>メモ</h3>
+          <label class="field"><textarea id="notesInput" rows="4" placeholder="補足や所感など"></textarea></label>
+        </section>
+      </div>
+
+      <div class="dialog-actions">
+        <button id="deleteButton" class="button button-danger" type="button" hidden>削除</button>
+        <span class="action-spacer"></span>
+        <button class="button button-ghost" type="button" data-close-dialog>キャンセル</button>
+        <button class="button button-primary" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="criteriaDialog" class="dialog criteria-dialog">
+    <form id="criteriaForm" method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">ランキングの軸</span>
+          <h2>評価項目を編集</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button>
+      </div>
+      <div class="criteria-content tag-dialog-content">
+        <p class="tag-help"><code>メイン項目：サブ項目</code>で追加します。メイン項目だけの登録も可能です。</p>
+        <div class="overall-criterion-lock"><span>総合評価</span><small>自動計算・編集不要</small></div>
+        <div class="criterion-add-row tag-add-row">
+          <input id="newCriterionInput" maxlength="60" placeholder="例：演出：先読み">
+          <button class="button button-ghost" id="addCriterionButton" type="button">＋ 追加</button>
+        </div>
+        <div id="criteriaRows" class="criteria-rows tag-manage-groups"></div>
+      </div>
+      <div class="dialog-actions">
+        <span class="action-spacer"></span>
+        <button class="button button-ghost" type="button" data-close-dialog>キャンセル</button>
+        <button class="button button-primary" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="tagDialog" class="dialog tag-dialog">
+    <div class="dialog-heading">
+      <div>
+        <span class="eyebrow">タグ</span>
+        <h2>絞り込みと管理</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button>
+    </div>
+    <div class="tag-dialog-tabs" role="tablist">
+      <button class="tag-dialog-tab active" type="button" data-tag-pane="filter">絞り込み</button>
+      <button class="tag-dialog-tab" type="button" data-tag-pane="manage">管理</button>
+    </div>
+    <div id="tagFilterPane" class="tag-dialog-content">
+      <div class="tag-pane-heading"><p>選択したタグのいずれかを含む機種を表示します。</p><button class="text-button" id="clearTagFiltersButton" type="button">すべて解除</button></div>
+      <div id="tagFilterGroups" class="tag-groups"></div>
+    </div>
+    <div id="tagManagePane" class="tag-dialog-content" hidden>
+      <p class="tag-help"><code>カテゴリ：項目</code>の形式で追加すると、カテゴリごとにまとまります。</p>
+      <div class="tag-add-row"><input id="newTagInput" maxlength="60" placeholder="例：メーカー：大都技研"><button class="button button-ghost" id="addTagButton" type="button">＋ 追加</button></div>
+      <div id="tagManageGroups" class="tag-manage-groups"></div>
+    </div>
+    <div class="dialog-actions"><span class="action-spacer"></span><button class="button button-primary" id="tagDialogDoneButton" type="button">完了</button></div>
+  </dialog>
+
+  <dialog id="machineTagDialog" class="dialog machine-tag-dialog">
+    <div class="dialog-heading">
+      <div>
+        <span class="eyebrow">タグ割り当て</span>
+        <h2 id="machineTagTitle">機種のタグ</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-machine-tags aria-label="閉じる">×</button>
+    </div>
+    <div class="tag-dialog-content">
+      <div id="machineTagGroups" class="tag-groups"></div>
+    </div>
+    <div class="dialog-actions"><span class="action-spacer"></span><button class="button button-primary" id="machineTagDoneButton" type="button">完了</button></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
