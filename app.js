@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pachinko-spec-library-v1';
-  const SCHEMA_VERSION = 7;
+  const SCHEMA_VERSION = 8;
   const OVERALL_RATING_ID = '__overall__';
   const DEFAULT_RATING_CRITERIA = [
     { id: 'production', name: '演出' },
@@ -120,9 +120,10 @@
           .map(item => ({
             id: item.id || crypto.randomUUID(),
             name: String(item.name).trim(),
+            weight: normalizeRatingWeight(item.weight),
             children: (Array.isArray(item.children) ? item.children : [])
               .filter(child => child && String(child.name || '').trim())
-              .map(child => ({ id: child.id || crypto.randomUUID(), name: String(child.name).trim() }))
+              .map(child => ({ id: child.id || crypto.randomUUID(), name: String(child.name).trim(), weight: normalizeRatingWeight(child.weight) }))
           })),
         tags: allTags
       },
@@ -474,29 +475,38 @@
     return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('ja-JP');
   }
 
+  // Empty weights preserve the original equal-weight average. Zero opts out.
+  function normalizeRatingWeight(value) {
+    if (value === null || value === undefined || (typeof value === 'string' && !value.trim())) return null;
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    const weight = Number(value);
+    return Number.isFinite(weight) && weight >= 0 ? weight : null;
+  }
+
+  function weightedRating(entries) {
+    const scored = entries.map(({ value, weight }) => ({ value, weight: normalizeRatingWeight(weight) ?? 1 }))
+      .filter(item => Number.isFinite(item.value) && item.weight > 0);
+    if (!scored.length) return null;
+    // Scaling avoids overflow for large but valid imported weights.
+    const scale = scored.reduce((max, item) => Math.max(max, item.weight), 0);
+    const totalWeight = scored.reduce((sum, item) => sum + item.weight / scale, 0);
+    return scored.reduce((sum, item) => sum + item.value * (item.weight / scale), 0) / totalWeight;
+  }
+
+  function overallRatingFromRatings(criteria, ratings) {
+    return weightedRating(criteria.map(criterion => ({
+      value: criterionRatingFromRatings(criterion, ratings), weight: criterion.weight
+    })));
+  }
+
   function ratingValue(machine, criterionId) {
     if (criterionId === OVERALL_RATING_ID) return averageRating(machine);
     const main = state.data.settings.ratingCriteria.find(criterion => criterion.id === criterionId);
-    if (main?.children?.length) {
-      const childValues = main.children
-        .map(child => directRatingValue(machine, child.id))
-        .filter(value => value !== null);
-      return childValues.length ? childValues.reduce((sum, value) => sum + value, 0) / childValues.length : null;
-    }
-    return directRatingValue(machine, criterionId);
-  }
-
-  function directRatingValue(machine, criterionId) {
-    const value = Number(machine.ratings?.[criterionId]);
-    return value >= 0.5 && value <= 5 && Number.isInteger(value * 2) ? value : null;
+    return main ? criterionRatingFromRatings(main, machine.ratings) : directRatingFromObject(machine.ratings, criterionId);
   }
 
   function averageRating(machine) {
-    const values = state.data.settings.ratingCriteria
-      .map(criterion => ratingValue(machine, criterion.id))
-      .filter(value => value !== null);
-    if (!values.length) return null;
-    return values.reduce((sum, value) => sum + value, 0) / values.length;
+    return overallRatingFromRatings(state.data.settings.ratingCriteria, machine.ratings);
   }
 
   function ratingCriteriaWithOverall() {
@@ -593,7 +603,7 @@
     const visible = criteria.slice(0, 6);
     const remaining = criteria.length - visible.length;
     return `<div class="card-evaluation" role="button" tabindex="0" aria-label="${escapeHtml(machine.name)}の評価を編集">
-      <div class="card-evaluation-head"><span>総合評価 <small>項目平均</small></span><div class="card-overall-score">${starsTemplate(average)}${average !== null ? `<strong>${average.toFixed(1)}</strong>` : '<strong class="unrated">未評価</strong>'}</div></div>
+      <div class="card-evaluation-head"><span>総合評価 <small>重みを反映</small></span><div class="card-overall-score">${starsTemplate(average)}${average !== null ? `<strong>${average.toFixed(1)}</strong>` : '<strong class="unrated">未評価</strong>'}</div></div>
       ${visible.length ? `<div class="card-rating-grid">
         ${visible.map(criterion => {
           const value = ratingValue(machine, criterion.id);
@@ -780,10 +790,9 @@
 
   function renderRatingFields(ratings = {}, container = $('#ratingFields')) {
     const criteria = state.data.settings.ratingCriteria;
-    const scoredValues = criteria.map(criterion => criterionRatingFromRatings(criterion, ratings)).filter(value => value !== null);
-    const overall = scoredValues.length ? scoredValues.reduce((sum, value) => sum + value, 0) / scoredValues.length : null;
+    const overall = overallRatingFromRatings(criteria, ratings);
     const overallField = `<div class="rating-field rating-field-overall">
-      <span>総合評価 <small>項目平均から自動計算</small></span>
+      <span>総合評価 <small>各項目の重みを反映して自動計算</small></span>
       <div class="calculated-rating" data-calculated-rating>${starsTemplate(overall)}<strong class="${overall === null ? 'unrated' : ''}">${overall === null ? '—' : overall.toFixed(1)}</strong></div>
     </div>`;
     if (!criteria.length) {
@@ -793,13 +802,13 @@
     container.innerHTML = overallField + criteria.map(criterion => {
       const children = criterion.children || [];
       if (!children.length) {
-        return `<div class="rating-main-group" data-main-rating><div class="rating-field" data-rating-id="${escapeHtml(criterion.id)}" data-value="${directRatingFromObject(ratings, criterion.id) ?? 0}">
+        return `<div class="rating-main-group" data-main-rating="${escapeHtml(criterion.id)}"><div class="rating-field" data-rating-id="${escapeHtml(criterion.id)}" data-value="${directRatingFromObject(ratings, criterion.id) ?? 0}">
           <span>${escapeHtml(criterion.name)}</span>${interactiveStarsTemplate(directRatingFromObject(ratings, criterion.id), criterion.name)}
         </div></div>`;
       }
       const mainValue = criterionRatingFromRatings(criterion, ratings);
-      return `<section class="rating-main-group rating-main-with-children" data-main-rating>
-        <div class="rating-parent-calculated"><span>${escapeHtml(criterion.name)} <small>サブ項目平均</small></span><div data-main-calculated>${starsTemplate(mainValue)}<strong class="${mainValue === null ? 'unrated' : ''}">${mainValue === null ? '—' : mainValue.toFixed(1)}</strong></div></div>
+      return `<section class="rating-main-group rating-main-with-children" data-main-rating="${escapeHtml(criterion.id)}">
+        <div class="rating-parent-calculated"><span>${escapeHtml(criterion.name)} <small>サブ項目の重みを反映</small></span><div data-main-calculated>${starsTemplate(mainValue)}<strong class="${mainValue === null ? 'unrated' : ''}">${mainValue === null ? '—' : mainValue.toFixed(1)}</strong></div></div>
         <div class="rating-subfields">${children.map(child => `<div class="rating-field" data-rating-id="${escapeHtml(child.id)}" data-value="${directRatingFromObject(ratings, child.id) ?? 0}"><span>${escapeHtml(child.name)}</span>${interactiveStarsTemplate(directRatingFromObject(ratings, child.id), child.name)}</div>`).join('')}</div>
       </section>`;
     }).join('');
@@ -813,8 +822,9 @@
   function criterionRatingFromRatings(criterion, ratings) {
     const children = criterion.children || [];
     if (!children.length) return directRatingFromObject(ratings, criterion.id);
-    const values = children.map(child => directRatingFromObject(ratings, child.id)).filter(value => value !== null);
-    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    return weightedRating(children.map(child => ({
+      value: directRatingFromObject(ratings, child.id), weight: child.weight
+    })));
   }
 
   function interactiveStarsTemplate(value, label) {
@@ -1083,16 +1093,21 @@
 
   function updateOverallPreview(container) {
     if (!container) return;
-    const values = $$('[data-main-rating]', container).map(group => {
-      const childValues = $$('[data-rating-id]', group).map(field => Number(field.dataset.value)).filter(value => value >= 0.5 && value <= 5);
-      const value = childValues.length ? childValues.reduce((sum, item) => sum + item, 0) / childValues.length : null;
+    const ratings = readRatings(container);
+    const criteria = state.data.settings.ratingCriteria;
+    $$('[data-main-rating]', container).forEach(group => {
+      const criterion = criteria.find(item => item.id === group.dataset.mainRating);
+      const value = criterion ? criterionRatingFromRatings(criterion, ratings) : null;
       const mainTarget = $('[data-main-calculated]', group);
       if (mainTarget) mainTarget.innerHTML = `${starsTemplate(value)}<strong class="${value === null ? 'unrated' : ''}">${value === null ? '—' : value.toFixed(1)}</strong>`;
-      return value;
-    }).filter(value => value !== null);
-    const overall = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    });
+    const overall = overallRatingFromRatings(criteria, ratings);
     const target = $('[data-calculated-rating]', container);
     if (target) target.innerHTML = `${starsTemplate(overall)}<strong class="${overall === null ? 'unrated' : ''}">${overall === null ? '—' : overall.toFixed(1)}</strong>`;
+  }
+
+  function ratingWeightInput(weight, isChild = false) {
+    return `<label class="criterion-weight"><span>重み</span><input type="number" min="0" step="any" inputmode="decimal" data-${isChild ? 'subcriterion' : 'criterion'}-weight aria-label="${isChild ? 'サブ' : 'メイン'}項目の重み" placeholder="1" value="${normalizeRatingWeight(weight) ?? ''}" title="空欄は1、0は平均から除外"></label>`;
   }
 
   function addCriterionChip(criterion = {}) {
@@ -1101,7 +1116,7 @@
     const chip = document.createElement('div');
     chip.className = 'criterion-chip';
     chip.dataset.criterionId = criterion.id || crypto.randomUUID();
-    chip.innerHTML = `<div class="criterion-main-row"><input maxlength="30" data-criterion-name aria-label="メイン評価項目名" value="${escapeHtml(name)}"><button class="remove-criterion" type="button" aria-label="メイン項目を削除">×</button></div><div class="subcriterion-list"></div>`;
+    chip.innerHTML = `<div class="criterion-main-row"><input maxlength="30" data-criterion-name aria-label="メイン評価項目名" value="${escapeHtml(name)}">${ratingWeightInput(criterion.weight)}<button class="remove-criterion" type="button" aria-label="メイン項目を削除">×</button></div><div class="subcriterion-list"></div>`;
     $('#criteriaRows').append(chip);
     (criterion.children || []).forEach(child => addSubcriterionChip(chip, child));
   }
@@ -1110,7 +1125,7 @@
     const row = document.createElement('div');
     row.className = 'subcriterion-chip';
     row.dataset.criterionId = child.id || crypto.randomUUID();
-    row.innerHTML = `<span>↳</span><input maxlength="30" data-subcriterion-name aria-label="サブ評価項目名" value="${escapeHtml(child.name || '')}" placeholder="サブ項目名"><button class="remove-subcriterion" type="button" aria-label="サブ項目を削除">×</button>`;
+    row.innerHTML = `<span>↳</span><input maxlength="30" data-subcriterion-name aria-label="サブ評価項目名" value="${escapeHtml(child.name || '')}" placeholder="サブ項目名">${ratingWeightInput(child.weight, true)}<button class="remove-subcriterion" type="button" aria-label="サブ項目を削除">×</button>`;
     $('.subcriterion-list', criterionChip).append(row);
     if (!child.name) $('[data-subcriterion-name]', row).focus();
   }
@@ -1365,13 +1380,14 @@
       const childNames = new Set();
       const children = $$('.subcriterion-chip', chip).map(child => ({
         id: child.dataset.criterionId,
-        name: $('[data-subcriterion-name]', child).value.trim()
+        name: $('[data-subcriterion-name]', child).value.trim(),
+        weight: normalizeRatingWeight($('[data-subcriterion-weight]', child).value)
       })).filter(child => {
         if (!child.name || childNames.has(child.name)) return false;
         childNames.add(child.name);
         return true;
       });
-      return { id: chip.dataset.criterionId, name: $('[data-criterion-name]', chip).value.trim(), children };
+      return { id: chip.dataset.criterionId, name: $('[data-criterion-name]', chip).value.trim(), weight: normalizeRatingWeight($('[data-criterion-weight]', chip).value), children };
     }).filter(item => {
       if (!item.name || seenNames.has(item.name)) return false;
       seenNames.add(item.name);

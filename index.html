@@ -89,7 +89,7 @@
       </div>
       <input id="ratingMachineId" type="hidden">
       <div class="quick-rating-content">
-        <div class="section-heading"><p>0.5刻みで各項目を評価すると、総合評価が自動計算されます。</p></div>
+        <div class="section-heading"><p>0.5刻みで各項目を評価すると、重みを反映した総合評価が自動計算されます。</p></div>
         <div id="quickRatingFields" class="rating-fields"></div>
       </div>
       <div class="dialog-actions">
@@ -176,7 +176,7 @@
 
         <section class="form-section">
           <div class="section-heading"><h3>10段階評価</h3></div>
-          <p class="section-note">各項目の星を選ぶと、総合評価が平均値から自動計算されます。同じ星をもう一度押すと未評価に戻せます。</p>
+          <p class="section-note">各項目の星を選ぶと、総合評価が各項目の重みを反映した平均値から自動計算されます。同じ星をもう一度押すと未評価に戻せます。</p>
           <div id="ratingFields" class="rating-fields"></div>
         </section>
 
@@ -206,6 +206,7 @@
       </div>
       <div class="criteria-content tag-dialog-content">
         <p class="tag-help"><code>メイン項目：サブ項目</code>で追加します。メイン項目だけの登録も可能です。</p>
+        <p class="criteria-weight-help">重みは全機種に共通です。空欄は1、2なら2倍、0は平均から除外します。メイン項目は総合評価、サブ項目は親の評価に反映されます。未評価は計算に含めず、対象がすべて0なら「—」になります。</p>
         <div class="overall-criterion-lock"><span>総合評価</span><small>自動計算・編集不要</small></div>
         <div class="criterion-add-row tag-add-row">
           <input id="newCriterionInput" maxlength="60" placeholder="例：演出：先読み">
