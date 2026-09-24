@@ -49,24 +49,11 @@ button, select { cursor: pointer; }
   backdrop-filter: blur(18px);
 }
 
-.brand { display: flex; align-items: center; gap: 9px; min-width: 150px; }
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 auto;
-  border-radius: 14px;
-  color: var(--accent-text);
-  background: linear-gradient(145deg, var(--accent-strong), #e8991c);
-  font-size: 1.35rem;
-  font-weight: 900;
-  box-shadow: 0 8px 24px rgba(246, 183, 60, .22);
-}
-
+.brand { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 h1, h2, h3, p { margin-top: 0; }
-.brand h1 { margin: 0; font-size: clamp(.88rem, 1.4vw, 1.05rem); letter-spacing: .01em; white-space: nowrap; }
-.brand p { margin: 0; color: var(--muted); font-size: .72rem; }
+.brand h1 { margin: 0; line-height: 0; }
+.brand-logo { display: block; width: 148px; height: auto; }
+.brand .brand-count { margin: 0; color: var(--muted); font-size: .68rem; white-space: nowrap; }
 .header-tools { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; flex: 1 1 auto; }
 .header-tools .button { min-height: 38px; padding: 7px 10px; white-space: nowrap; font-size: .78rem; }
 .header-search { flex: 1 1 210px; min-width: 150px; max-width: 330px; }
