@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pachinko-spec-library-v1';
-  const SCHEMA_VERSION = 9;
+  const SCHEMA_VERSION = 10;
   const RATINGS_STORAGE_KEY = 'pachispec-personal-ratings-v1';
   const OVERALL_RATING_ID = '__overall__';
   const DEFAULT_RATING_CRITERIA = [
@@ -94,13 +94,13 @@
     toast: $('#toast')
   };
 
-  function ratingsDocument(ratings) {
-    return { format: 'pachispec-ratings', schemaVersion: 1, ratings };
+  function ratingsDocument(ratings, weights = {}) {
+    return { format: 'pachispec-ratings', schemaVersion: 2, ratings, weights };
   }
 
   function readPersonalData(parsed) {
     let source;
-    if (parsed?.format === 'pachispec-ratings' && parsed.schemaVersion === 1) {
+    if (parsed?.format === 'pachispec-ratings' && [1, 2].includes(parsed.schemaVersion)) {
       source = parsed.ratings;
     } else if (!parsed?.format && Array.isArray(parsed?.machines)) {
       // Older combined backups can be imported explicitly into either section.
@@ -122,6 +122,38 @@
     }));
   }
 
+  function weightsFromCriteria(criteria = []) {
+    return Object.fromEntries(criteria.flatMap(item => [item, ...(item.children || [])])
+      .filter(item => Object.hasOwn(item, 'weight'))
+      .map(item => [item.id, normalizeRatingWeight(item.weight)]));
+  }
+
+  function readPersonalWeights(parsed) {
+    if (parsed?.format !== 'pachispec-ratings') return weightsFromCriteria(parsed?.settings?.ratingCriteria);
+    if (parsed.schemaVersion === 1) return {};
+    const weights = parsed.weights;
+    if (!weights || typeof weights !== 'object' || Array.isArray(weights)) throw new Error('重みの形式が正しくありません。');
+    return Object.fromEntries(Object.entries(weights).map(([id, value]) => {
+      const normalized = normalizeRatingWeight(value);
+      if (!id || (value !== null && value !== '' && normalized === null)) throw new Error('重みは0以上の数値で指定してください。');
+      return [id, normalized];
+    }));
+  }
+
+  function effectiveCriteria() {
+    return state.data.settings.ratingCriteria.map(item => ({ ...item,
+      weight: Object.hasOwn(state.weights, item.id) ? state.weights[item.id] : null,
+      children: (item.children || []).map(child => ({ ...child,
+        weight: Object.hasOwn(state.weights, child.id) ? state.weights[child.id] : null
+      }))
+    }));
+  }
+
+  function visibleRatingIds() {
+    return effectiveCriteria().filter(item => item.weight !== 0).flatMap(item =>
+      item.children.length ? item.children.filter(child => child.weight !== 0).map(child => child.id) : [item.id]);
+  }
+
   function loadStores() {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : defaultData();
@@ -129,25 +161,27 @@
     const data = normalizeData(parsed);
     const personal = localStorage.getItem(RATINGS_STORAGE_KEY);
     let ratings;
+    let weights = weightsFromCriteria(parsed.settings?.ratingCriteria);
     if (personal !== null) {
-      ratings = readPersonalData(JSON.parse(personal));
+      const saved = JSON.parse(personal);
+      ratings = readPersonalData(saved);
+      weights = { ...weights, ...readPersonalWeights(saved) };
     } else {
-      // Match generated IDs too, so old records without IDs retain their scores.
       ratings = readPersonalData(ratingsDocument(Object.fromEntries(parsed.machines.map((machine, i) => [data.machines[i].id, machine.ratings || {}]))));
-      // Write scores first. If this fails, the combined source remains intact.
-      try {
-        localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(ratings)));
-      } catch (error) {
-        console.warn('評価の分離保存に失敗しました。元のデータを保持しています。', error);
-        return { data, ratings, migrationPending: true };
-      }
+    }
+    // Persist personal settings before removing them from the shared source.
+    try {
+      localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(ratings, weights)));
+    } catch (error) {
+      console.warn('評価の分離保存に失敗しました。元のデータを保持しています。', error);
+      return { data, ratings, weights, migrationPending: true };
     }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (error) {
       console.warn('機種データの保存に失敗しました。元のデータを保持しています。', error);
     }
-    return { data, ratings };
+    return { data, ratings, weights };
   }
 
   function machineRatings(machine) {
@@ -155,14 +189,14 @@
   }
 
   function saveRatings(message) {
-    localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(state.ratings)));
+    localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(state.ratings, state.weights)));
     if (message) showToast(message);
   }
 
   function setMachineRatings(id, scores) {
     const previous = Object.hasOwn(state.ratings, id) ? state.ratings[id] : {};
     // Preserve unmatched item IDs until their definitions are loaded again.
-    const activeIds = state.data.settings.ratingCriteria.flatMap(item => [item.id, ...(item.children || []).map(child => child.id)]);
+    const activeIds = visibleRatingIds();
     const kept = Object.fromEntries(Object.entries(previous).filter(([key]) => !activeIds.includes(key)));
     state.ratings = { ...state.ratings, [id]: { ...kept, ...scores } };
     saveRatings();
@@ -185,10 +219,9 @@
           .map(item => ({
             id: item.id || crypto.randomUUID(),
             name: String(item.name).trim(),
-            weight: normalizeRatingWeight(item.weight),
             children: (Array.isArray(item.children) ? item.children : [])
               .filter(child => child && String(child.name || '').trim())
-              .map(child => ({ id: child.id || crypto.randomUUID(), name: String(child.name).trim(), weight: normalizeRatingWeight(child.weight) }))
+              .map(child => ({ id: child.id || crypto.randomUUID(), name: String(child.name).trim() }))
           })),
         tags: allTags
       },
@@ -571,12 +604,12 @@
 
   function ratingValue(machine, criterionId) {
     if (criterionId === OVERALL_RATING_ID) return averageRating(machine);
-    const main = state.data.settings.ratingCriteria.find(criterion => criterion.id === criterionId);
+    const main = effectiveCriteria().find(criterion => criterion.id === criterionId);
     return main ? criterionRatingFromRatings(main, machineRatings(machine)) : directRatingFromObject(machineRatings(machine), criterionId);
   }
 
   function averageRating(machine) {
-    return overallRatingFromRatings(state.data.settings.ratingCriteria, machineRatings(machine));
+    return overallRatingFromRatings(effectiveCriteria(), machineRatings(machine));
   }
 
   function ratingCriteriaWithOverall() {
@@ -668,7 +701,7 @@
   }
 
   function cardRatingTemplate(machine) {
-    const criteria = state.data.settings.ratingCriteria;
+    const criteria = effectiveCriteria();
     const average = averageRating(machine);
     const visible = criteria.slice(0, 6);
     const remaining = criteria.length - visible.length;
@@ -859,7 +892,7 @@
   }
 
   function renderRatingFields(ratings = {}, container = $('#ratingFields')) {
-    const criteria = state.data.settings.ratingCriteria;
+    const criteria = effectiveCriteria();
     const overall = overallRatingFromRatings(criteria, ratings);
     const overallField = `<div class="rating-field rating-field-overall">
       <span>総合評価 <small>各項目の重みを反映して自動計算</small></span>
@@ -869,7 +902,7 @@
       container.innerHTML = `${overallField}<p class="ratings-empty">評価項目がありません。ヘッダーの「評価項目」から追加できます。</p>`;
       return;
     }
-    container.innerHTML = overallField + criteria.map(criterion => {
+    container.innerHTML = overallField + criteria.filter(criterion => criterion.weight !== 0).map(criterion => {
       const children = criterion.children || [];
       if (!children.length) {
         return `<div class="rating-main-group" data-main-rating="${escapeHtml(criterion.id)}"><div class="rating-field" data-rating-id="${escapeHtml(criterion.id)}" data-value="${directRatingFromObject(ratings, criterion.id) ?? 0}">
@@ -879,7 +912,7 @@
       const mainValue = criterionRatingFromRatings(criterion, ratings);
       return `<section class="rating-main-group rating-main-with-children" data-main-rating="${escapeHtml(criterion.id)}">
         <div class="rating-parent-calculated"><span>${escapeHtml(criterion.name)} <small>サブ項目の重みを反映</small></span><div data-main-calculated>${starsTemplate(mainValue)}<strong class="${mainValue === null ? 'unrated' : ''}">${mainValue === null ? '—' : mainValue.toFixed(1)}</strong></div></div>
-        <div class="rating-subfields">${children.map(child => `<div class="rating-field" data-rating-id="${escapeHtml(child.id)}" data-value="${directRatingFromObject(ratings, child.id) ?? 0}"><span>${escapeHtml(child.name)}</span>${interactiveStarsTemplate(directRatingFromObject(ratings, child.id), child.name)}</div>`).join('')}</div>
+        <div class="rating-subfields">${children.filter(child => child.weight !== 0).map(child => `<div class="rating-field" data-rating-id="${escapeHtml(child.id)}" data-value="${directRatingFromObject(ratings, child.id) ?? 0}"><span>${escapeHtml(child.name)}</span>${interactiveStarsTemplate(directRatingFromObject(ratings, child.id), child.name)}</div>`).join('')}</div>
       </section>`;
     }).join('');
   }
@@ -1140,7 +1173,7 @@
   function openCriteriaEditor() {
     const container = $('#criteriaRows');
     container.innerHTML = '';
-    state.data.settings.ratingCriteria.forEach(criterion => addCriterionChip(criterion));
+    effectiveCriteria().forEach(criterion => addCriterionChip(criterion));
     $('#newCriterionInput').value = '';
     el.criteriaDialog.showModal();
   }
@@ -1163,7 +1196,7 @@
   function updateOverallPreview(container) {
     if (!container) return;
     const ratings = readRatings(container);
-    const criteria = state.data.settings.ratingCriteria;
+    const criteria = effectiveCriteria();
     $$('[data-main-rating]', container).forEach(group => {
       const criterion = criteria.find(item => item.id === group.dataset.mainRating);
       const value = criterion ? criterionRatingFromRatings(criterion, ratings) : null;
@@ -1250,7 +1283,7 @@
 
   function exportJson(kind = 'catalog') {
     const personal = kind === 'ratings';
-    const data = personal ? ratingsDocument(state.ratings) : normalizeData(state.data);
+    const data = personal ? ratingsDocument(state.ratings, state.weights) : normalizeData(state.data);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1266,8 +1299,10 @@
       if (kind === 'ratings') {
         const imported = readPersonalData(parsed);
         const next = { ...state.ratings, ...imported };
-        localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(next)));
+        const weights = { ...state.weights, ...readPersonalWeights(parsed) };
+        localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(next, weights)));
         state.ratings = next;
+        state.weights = weights;
         const knownIds = new Set(state.data.machines.map(machine => machine.id));
         const pending = Object.keys(imported).filter(id => !knownIds.has(id)).length;
         showToast(`自分の評価データをインポートしました${pending ? `（未登録の${pending}機種分も保存）` : ''}`);
@@ -1483,7 +1518,9 @@
       seenNames.add(item.name);
       return true;
     });
-    state.data.settings.ratingCriteria = criteria;
+    state.weights = { ...state.weights, ...weightsFromCriteria(criteria) };
+    saveRatings();
+    state.data.settings.ratingCriteria = normalizeData({ ...state.data, settings: { ...state.data.settings, ratingCriteria: criteria } }).settings.ratingCriteria;
     // Keep scores for absent criteria separately; reimporting their IDs restores them.
     if (el.editorDialog.open) renderRatingFields(editorRatings);
     if (el.ratingDialog.open) renderRatingFields(quickRatings, $('#quickRatingFields'));

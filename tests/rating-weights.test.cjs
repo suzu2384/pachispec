@@ -56,13 +56,10 @@ test('invalid imported weights fall back to equal weighting', () => {
 test('extremely large valid weights remain finite', () => {
   assert.equal(weightedRating([{ value: 5, weight: 1e308 }, { value: 1, weight: 1e308 }]), 3);
 });
-test('import/export and URL settings normalization retain both levels', () => {
-  const data = { schemaVersion: 8, machines: [], settings: { ratingCriteria: criteria, tags: [] } };
+test('shared normalization removes personal weights at both levels', () => {
+  const data = { schemaVersion: 10, machines: [], settings: { ratingCriteria: criteria, tags: [] } };
   const restored = normalizeData(JSON.parse(JSON.stringify(data)));
-  assert.equal(restored.settings.ratingCriteria[0].weight, 2);
-  assert.equal(restored.settings.ratingCriteria[0].children[0].weight, 3);
-  approx(overallRatingFromRatings(restored.settings.ratingCriteria, { a: 5, b: 1, other: 2 }), 10 / 3);
-  const old = normalizeData({ schemaVersion: 7, machines: [], settings: { ratingCriteria: [{ id: 'a', name: '既存' }] } });
-  assert.equal(old.settings.ratingCriteria[0].weight, null);
-  assert.equal(overallRatingFromRatings(old.settings.ratingCriteria, { a: 4 }), 4);
+  assert.equal(Object.hasOwn(restored.settings.ratingCriteria[0], 'weight'), false);
+  assert.equal(Object.hasOwn(restored.settings.ratingCriteria[0].children[0], 'weight'), false);
+  assert.equal(overallRatingFromRatings(restored.settings.ratingCriteria, { a: 5, b: 1, other: 2 }), 2.5);
 });
