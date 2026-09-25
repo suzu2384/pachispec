@@ -36,11 +36,21 @@
         </svg>
       </button>
       <details class="data-menu"><summary class="button button-ghost">データ管理</summary><div class="data-menu-popup">
-        <button id="exportButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg><span>エクスポート</span></button>
-        <button id="importButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4-4 4M5 17v3h14v-3"/></svg><span>インポート</span></button>
+        <section class="data-menu-group" aria-labelledby="catalogDataTitle">
+          <h2 id="catalogDataTitle">機種・設定データ</h2>
+          <p>スペック・タグ・評価項目・重み</p>
+          <div class="data-menu-actions"><button id="exportButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg><span>エクスポート</span></button><button id="importButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4-4 4M5 17v3h14v-3"/></svg><span>インポート</span></button></div>
+        </section>
+        <section class="data-menu-group" aria-labelledby="ratingsDataTitle">
+          <h2 id="ratingsDataTitle">自分の評価データ</h2>
+          <p>機種ごとに付けた評価点のみ</p>
+          <div class="data-menu-actions"><button id="ratingsExportButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg><span>エクスポート</span></button><button id="ratingsImportButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4-4 4M5 17v3h14v-3"/></svg><span>インポート</span></button></div>
+          <small>読込時は同じ機種IDの評価を上書きします。</small>
+        </section>
       </div></details>
       <button class="button button-primary" id="addButton" type="button">＋ 機種を追加</button>
       <input id="importInput" type="file" accept="application/json,.json" hidden>
+      <input id="ratingsImportInput" type="file" accept="application/json,.json" hidden>
     </div>
   </header>
 

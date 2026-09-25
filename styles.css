@@ -463,3 +463,13 @@ textarea { resize: vertical; }
   .criterion-main-row .remove-criterion { margin-left: auto; }
   .subcriterion-chip { width: 100%; }
 }
+
+.data-menu-popup { width: 304px; max-width: calc(100vw - 28px); }
+.data-menu-group { padding: 8px 4px; }
+.data-menu-group + .data-menu-group { border-top: 1px solid var(--line); }
+.data-menu-group h2 { margin: 0 6px 4px; font-size: .82rem; }
+.data-menu-group p, .data-menu-group small { display: block; margin: 0 6px 5px; color: var(--muted); font-size: .68rem; line-height: 1.5; }
+.data-menu-actions { display: flex; flex-wrap: wrap; gap: 2px; }
+@media (max-width: 760px) {
+  .data-menu-popup { position: fixed; top: auto; right: 14px; margin-top: 7px; max-height: 70vh; overflow-y: auto; }
+}

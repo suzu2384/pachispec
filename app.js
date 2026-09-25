@@ -2,7 +2,8 @@
   'use strict';
 
   const STORAGE_KEY = 'pachinko-spec-library-v1';
-  const SCHEMA_VERSION = 8;
+  const SCHEMA_VERSION = 9;
+  const RATINGS_STORAGE_KEY = 'pachispec-personal-ratings-v1';
   const OVERALL_RATING_ID = '__overall__';
   const DEFAULT_RATING_CRITERIA = [
     { id: 'production', name: '演出' },
@@ -49,7 +50,6 @@
       { label: '時短', value: '通常大当り後なし' }
     ],
     notes: '操作確認用の架空機種です。編集または削除してお使いください。',
-    ratings: { production: 4, output: 5, rush: 4 },
     createdAt: '2026-09-22T00:00:00.000Z',
     updatedAt: '2026-09-22T00:00:00.000Z'
   };
@@ -64,7 +64,7 @@
   });
 
   const state = {
-    data: loadData(),
+    ...loadStores(),
     filters: { search: '', tags: [], sortField: 'date', sortDirection: 'desc' },
     view: 'library',
     rankingCriterionId: null,
@@ -94,14 +94,78 @@
     toast: $('#toast')
   };
 
-  function loadData() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (parsed && Array.isArray(parsed.machines)) return normalizeData(parsed);
-    } catch (error) {
-      console.warn('保存データを読み込めませんでした。', error);
+  function ratingsDocument(ratings) {
+    return { format: 'pachispec-ratings', schemaVersion: 1, ratings };
+  }
+
+  function readPersonalData(parsed) {
+    let source;
+    if (parsed?.format === 'pachispec-ratings' && parsed.schemaVersion === 1) {
+      source = parsed.ratings;
+    } else if (!parsed?.format && Array.isArray(parsed?.machines)) {
+      // Older combined backups can be imported explicitly into either section.
+      const scored = parsed.machines.filter(machine => Object.hasOwn(machine, 'ratings'));
+      if (!scored.length) throw new Error('このファイルに評価点はありません。');
+      if (scored.some(machine => typeof machine.id !== 'string' || !machine.id)) throw new Error('評価対象の機種IDがありません。');
+      source = Object.fromEntries(scored.map(machine => [machine.id, machine.ratings]));
+    } else {
+      throw new Error('自分の評価データのファイルを選んでください。');
     }
-    return defaultData();
+    if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('評価データの形式が正しくありません。');
+    return Object.fromEntries(Object.entries(source).map(([machineId, scores]) => {
+      if (!machineId || !scores || typeof scores !== 'object' || Array.isArray(scores)) throw new Error('機種ごとの評価の形式が正しくありません。');
+      const entries = Object.entries(scores).filter(([id]) => id !== 'overall' && id !== OVERALL_RATING_ID);
+      if (entries.some(([id, value]) => !id || !['number', 'string'].includes(typeof value) || !Number.isFinite(Number(value)) || Number(value) < .5 || Number(value) > 5 || !Number.isInteger(Number(value) * 2))) {
+        throw new Error('評価点は0.5〜5の0.5刻みで指定してください。');
+      }
+      return [machineId, Object.fromEntries(entries.map(([id, value]) => [id, Number(value)]))];
+    }));
+  }
+
+  function loadStores() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : defaultData();
+    if (!Array.isArray(parsed?.machines)) throw new Error('保存された機種データの形式が正しくありません。');
+    const data = normalizeData(parsed);
+    const personal = localStorage.getItem(RATINGS_STORAGE_KEY);
+    let ratings;
+    if (personal !== null) {
+      ratings = readPersonalData(JSON.parse(personal));
+    } else {
+      // Match generated IDs too, so old records without IDs retain their scores.
+      ratings = readPersonalData(ratingsDocument(Object.fromEntries(parsed.machines.map((machine, i) => [data.machines[i].id, machine.ratings || {}]))));
+      // Write scores first. If this fails, the combined source remains intact.
+      try {
+        localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(ratings)));
+      } catch (error) {
+        console.warn('評価の分離保存に失敗しました。元のデータを保持しています。', error);
+        return { data, ratings, migrationPending: true };
+      }
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (error) {
+      console.warn('機種データの保存に失敗しました。元のデータを保持しています。', error);
+    }
+    return { data, ratings };
+  }
+
+  function machineRatings(machine) {
+    return machine && Object.hasOwn(state.ratings, machine.id) ? state.ratings[machine.id] : {};
+  }
+
+  function saveRatings(message) {
+    localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(state.ratings)));
+    if (message) showToast(message);
+  }
+
+  function setMachineRatings(id, scores) {
+    const previous = Object.hasOwn(state.ratings, id) ? state.ratings[id] : {};
+    // Preserve unmatched item IDs until their definitions are loaded again.
+    const activeIds = state.data.settings.ratingCriteria.flatMap(item => [item.id, ...(item.children || []).map(child => child.id)]);
+    const kept = Object.fromEntries(Object.entries(previous).filter(([key]) => !activeIds.includes(key)));
+    state.ratings = { ...state.ratings, [id]: { ...kept, ...scores } };
+    saveRatings();
   }
 
   function normalizeData(data) {
@@ -113,6 +177,7 @@
     const savedTags = Array.isArray(data.settings?.tags) ? data.settings.tags.filter(item => typeof item === 'string' && item.trim()) : [];
     const allTags = [...new Set([...savedTags, ...machines.flatMap(machine => machine.tags)])];
     return {
+      format: 'pachispec-catalog',
       schemaVersion: SCHEMA_VERSION,
       settings: {
         ratingCriteria: sourceCriteria
@@ -168,9 +233,6 @@
       rushPayoutModel: normalizeRushPayoutModel(machine.rushPayoutModel),
       initialPayoutExpectation: normalizePayoutExpectation(machine.initialPayoutExpectation),
       notes: machine.notes || '',
-      ratings: Object.fromEntries(Object.entries(machine.ratings || {})
-        .map(([key, value]) => [key, Number(value)])
-        .filter(([key, value]) => key !== 'overall' && key !== OVERALL_RATING_ID && value >= 0.5 && value <= 5 && Number.isInteger(value * 2))),
       createdAt: machine.createdAt || new Date().toISOString(),
       updatedAt: machine.updatedAt || new Date().toISOString()
     };
@@ -219,8 +281,16 @@
     };
   }
 
-  function saveData(message) {
+  function persistCatalog() {
+    if (state.migrationPending) {
+      saveRatings();
+      state.migrationPending = false;
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  }
+
+  function saveData(message) {
+    persistCatalog();
     syncSettingsToUrl();
     if (message) showToast(message);
   }
@@ -271,7 +341,7 @@
       const settings = JSON.parse(text);
       if (Array.isArray(settings.tags)) state.data.settings.tags = [...new Set([...settings.tags, ...state.data.machines.flatMap(machine => machine.tags)])];
       if (Array.isArray(settings.criteria)) state.data.settings.ratingCriteria = normalizeData({ schemaVersion: SCHEMA_VERSION, settings: { ratingCriteria: settings.criteria, tags: [] }, machines: [] }).settings.ratingCriteria;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+      persistCatalog();
     } catch (error) {
       console.warn('URLの設定を読み込めませんでした。', error);
     }
@@ -502,11 +572,11 @@
   function ratingValue(machine, criterionId) {
     if (criterionId === OVERALL_RATING_ID) return averageRating(machine);
     const main = state.data.settings.ratingCriteria.find(criterion => criterion.id === criterionId);
-    return main ? criterionRatingFromRatings(main, machine.ratings) : directRatingFromObject(machine.ratings, criterionId);
+    return main ? criterionRatingFromRatings(main, machineRatings(machine)) : directRatingFromObject(machineRatings(machine), criterionId);
   }
 
   function averageRating(machine) {
-    return overallRatingFromRatings(state.data.settings.ratingCriteria, machine.ratings);
+    return overallRatingFromRatings(state.data.settings.ratingCriteria, machineRatings(machine));
   }
 
   function ratingCriteriaWithOverall() {
@@ -739,7 +809,7 @@
     renderRepeater('special2', machine?.distributions.special2 || []);
     renderRepeater('flows', machine?.flows || []);
     renderRepeater('customSpecs', machine?.customSpecs || []);
-    renderRatingFields(machine?.ratings || {});
+    renderRatingFields(machineRatings(machine));
     updateRushPreview();
     updateInitialPayoutPreview();
     el.editorDialog.showModal();
@@ -750,7 +820,7 @@
     if (!machine) return;
     $('#ratingMachineId').value = machine.id;
     $('#ratingMachineName').textContent = machine.name;
-    renderRatingFields(machine.ratings, $('#quickRatingFields'));
+    renderRatingFields(machineRatings(machine), $('#quickRatingFields'));
     el.ratingDialog.showModal();
   }
 
@@ -873,7 +943,6 @@
       rushPayoutModel: existing?.rushPayoutModel || null,
       initialPayoutExpectation: expectation,
       notes: $('#notesInput').value.trim(),
-      ratings: readRatings(),
       createdAt: existing?.createdAt || now,
       updatedAt: now
     });
@@ -1179,27 +1248,45 @@
     button.title = `${label}（クリックで${next}）`;
   }
 
-  function exportJson() {
-    const blob = new Blob([JSON.stringify(state.data, null, 2)], { type: 'application/json' });
+  function exportJson(kind = 'catalog') {
+    const personal = kind === 'ratings';
+    const data = personal ? ratingsDocument(state.ratings) : normalizeData(state.data);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `pachinko-specs-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `pachispec-${personal ? 'my-ratings' : 'catalog'}-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
-    showToast('データをエクスポートしました');
+    showToast(`${personal ? '自分の評価データ' : '機種・設定データ'}をエクスポートしました`);
   }
 
-  async function importJson(file) {
+  async function importJson(file, kind = 'catalog') {
     try {
       const parsed = JSON.parse(await file.text());
-      if (!parsed || !Array.isArray(parsed.machines)) throw new Error('対応するデータがありません');
-      state.data = normalizeData(parsed);
-      saveData('データをインポートしました');
-      clearFilters();
+      if (kind === 'ratings') {
+        const imported = readPersonalData(parsed);
+        const next = { ...state.ratings, ...imported };
+        localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(next)));
+        state.ratings = next;
+        const knownIds = new Set(state.data.machines.map(machine => machine.id));
+        const pending = Object.keys(imported).filter(id => !knownIds.has(id)).length;
+        showToast(`自分の評価データをインポートしました${pending ? `（未登録の${pending}機種分も保存）` : ''}`);
+        render();
+      } else {
+        if (!parsed || !Array.isArray(parsed.machines) || (parsed.format && parsed.format !== 'pachispec-catalog')) throw new Error('機種・設定データのファイルを選んでください。');
+        const next = normalizeData(parsed);
+        if (state.migrationPending) { saveRatings(); state.migrationPending = false; }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        state.data = next;
+        syncSettingsToUrl();
+        clearFilters();
+        const hasLegacyScores = parsed.machines.some(machine => Object.keys(machine.ratings || {}).length);
+        showToast(hasLegacyScores ? '機種・設定を読み込みました。旧ファイルの評価点は「自分の評価データ」から同じファイルをインポートできます。' : '機種・設定データをインポートしました');
+      }
     } catch (error) {
       alert(`データをインポートできませんでした。\n${error.message}`);
     } finally {
-      $('#importInput').value = '';
+      $(kind === 'ratings' ? '#ratingsImportInput' : '#importInput').value = '';
     }
   }
 
@@ -1219,6 +1306,9 @@
   $('#exportButton').addEventListener('click', () => { exportJson(); $('.data-menu').open = false; });
   $('#importButton').addEventListener('click', () => { $('#importInput').click(); $('.data-menu').open = false; });
   $('#importInput').addEventListener('change', event => event.target.files[0] && importJson(event.target.files[0]));
+  $('#ratingsExportButton').addEventListener('click', () => { exportJson('ratings'); $('.data-menu').open = false; });
+  $('#ratingsImportButton').addEventListener('click', () => { $('#ratingsImportInput').click(); $('.data-menu').open = false; });
+  $('#ratingsImportInput').addEventListener('change', event => event.target.files[0] && importJson(event.target.files[0], 'ratings'));
 
   $('#searchInput').addEventListener('input', event => { state.filters.search = event.target.value; render(); });
   $('#sortFieldSelect').addEventListener('change', event => { state.filters.sortField = event.target.value; render(); });
@@ -1328,6 +1418,7 @@
     event.preventDefault();
     if (!el.form.reportValidity()) return;
     const machine = readMachineFromForm();
+    setMachineRatings(machine.id, readRatings());
     const index = state.data.machines.findIndex(item => item.id === machine.id);
     if (index >= 0) state.data.machines[index] = machine;
     else state.data.machines.push(machine);
@@ -1350,9 +1441,8 @@
     event.preventDefault();
     const machine = state.data.machines.find(item => item.id === $('#ratingMachineId').value);
     if (!machine) return;
-    machine.ratings = readRatings($('#quickRatingFields'));
-    machine.updatedAt = new Date().toISOString();
-    saveData('評価を保存しました');
+    setMachineRatings(machine.id, readRatings($('#quickRatingFields')));
+    showToast('評価を保存しました');
     closeDialog(el.ratingDialog);
     render();
   });
@@ -1393,13 +1483,8 @@
       seenNames.add(item.name);
       return true;
     });
-    const remainingIds = new Set(criteria.flatMap(item => [item.id, ...item.children.map(child => child.id)]));
     state.data.settings.ratingCriteria = criteria;
-    state.data.machines.forEach(machine => {
-      Object.keys(machine.ratings).forEach(id => {
-        if (!remainingIds.has(id)) delete machine.ratings[id];
-      });
-    });
+    // Keep scores for absent criteria separately; reimporting their IDs restores them.
     if (el.editorDialog.open) renderRatingFields(editorRatings);
     if (el.ratingDialog.open) renderRatingFields(quickRatings, $('#quickRatingFields'));
     saveData('評価項目を更新しました');
