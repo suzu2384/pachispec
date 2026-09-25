@@ -149,8 +149,12 @@
     }));
   }
 
+  function visibleCriteria() {
+    return effectiveCriteria().filter(item => item.weight !== 0);
+  }
+
   function visibleRatingIds() {
-    return effectiveCriteria().filter(item => item.weight !== 0).flatMap(item =>
+    return visibleCriteria().flatMap(item =>
       item.children.length ? item.children.filter(child => child.weight !== 0).map(child => child.id) : [item.id]);
   }
 
@@ -613,7 +617,7 @@
   }
 
   function ratingCriteriaWithOverall() {
-    return [{ id: OVERALL_RATING_ID, name: '総合評価' }, ...state.data.settings.ratingCriteria];
+    return [{ id: OVERALL_RATING_ID, name: '総合評価' }, ...visibleCriteria()];
   }
 
   function starsTemplate(value) {
@@ -701,7 +705,7 @@
   }
 
   function cardRatingTemplate(machine) {
-    const criteria = effectiveCriteria();
+    const criteria = visibleCriteria();
     const average = averageRating(machine);
     const visible = criteria.slice(0, 6);
     const remaining = criteria.length - visible.length;
@@ -811,7 +815,7 @@
 
   function ratingDetailTemplate(machine) {
     const overall = averageRating(machine);
-    const rows = state.data.settings.ratingCriteria.map(criterion => ({ criterion, value: ratingValue(machine, criterion.id) }));
+    const rows = visibleCriteria().map(criterion => ({ criterion, value: ratingValue(machine, criterion.id) }));
     return `<section class="detail-section detail-section-first"><h3>10段階評価</h3>
       <div class="detail-overall-rating"><span>総合評価</span>${starsTemplate(overall)}<strong class="${overall === null ? 'unrated' : ''}">${formatRating(overall)}</strong></div>
       ${rows.length ? `<div class="detail-ratings">${rows.map(item => `<div class="detail-rating"><span>${escapeHtml(item.criterion.name)}</span>${starsTemplate(item.value)}<strong class="${item.value === null ? 'unrated' : ''}">${formatRating(item.value)}</strong></div>`).join('')}</div>` : ''}

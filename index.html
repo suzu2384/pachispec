@@ -26,8 +26,6 @@
     </nav>
     <div class="header-tools">
       <label class="search-box header-search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="機種名・タグを検索"></label>
-      <button class="button button-ghost" id="tagsButton" type="button">タグ</button>
-      <button class="button button-ghost" id="criteriaButton" type="button">評価項目</button>
       <select id="sortFieldSelect" class="header-select" aria-label="並び替える項目"><option value="date">導入日</option><option value="name">機種名</option><option value="rush">実質RUSH突入率</option><option value="payout">初当り出球期待値</option></select>
       <button class="sort-direction-button descending" id="sortDirectionButton" type="button" aria-label="並び順：降順。昇順に切り替え" title="降順（クリックで昇順）">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -35,6 +33,8 @@
           <path d="M13 6h3M13 12h5M13 18h8"/>
         </svg>
       </button>
+      <button class="button button-ghost" id="tagsButton" type="button">タグ</button>
+      <button class="button button-ghost" id="criteriaButton" type="button">評価項目</button>
       <details class="data-menu"><summary class="button button-ghost">データ管理</summary><div class="data-menu-popup">
         <section class="data-menu-group" aria-labelledby="catalogDataTitle">
           <h2 id="catalogDataTitle">機種・設定データ</h2>
