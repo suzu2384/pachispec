@@ -497,3 +497,5 @@ textarea { resize: vertical; }
   .comparison-table thead th { font-size: .7rem; }
   .comparison-sub th { padding-left: 12px; }
 }
+
+.header-select { max-width: 180px; text-overflow: ellipsis; }

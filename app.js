@@ -631,6 +631,16 @@
     return parts.join(' ').toLocaleLowerCase('ja');
   }
 
+  function renderSortFields() {
+    const fixed = [ ['date', '導入日'], ['name', '機種名'], ['rush', '実質RUSH突入率'], ['payout', '初当り出球期待値'] ];
+    const ratings = ratingCriteriaWithOverall().map(item => [`rating:${item.id}`, item.name]);
+    const options = [...fixed, ...ratings];
+    if (!options.some(([value]) => value === state.filters.sortField)) state.filters.sortField = 'date';
+    const option = ([value, name]) => `<option value="${escapeHtml(value)}">${escapeHtml(name)}</option>`;
+    $('#sortFieldSelect').innerHTML = fixed.map(option).join('') + `<optgroup label="評価">${ratings.map(option).join('')}</optgroup>`;
+    $('#sortFieldSelect').value = state.filters.sortField;
+  }
+
   function filteredMachines() {
     const query = state.filters.search.trim().toLocaleLowerCase('ja');
     const machines = state.data.machines.filter(machine => {
@@ -641,6 +651,13 @@
 
     const direction = state.filters.sortDirection === 'asc' ? 1 : -1;
     return machines.sort((a, b) => {
+      if (state.filters.sortField.startsWith('rating:')) {
+        const id = state.filters.sortField.slice('rating:'.length);
+        const aValue = ratingValue(a, id);
+        const bValue = ratingValue(b, id);
+        if (aValue === null || bValue === null) return aValue === bValue ? a.name.localeCompare(b.name, 'ja') : aValue === null ? 1 : -1;
+        return (aValue - bValue) * direction || a.name.localeCompare(b.name, 'ja');
+      }
       let comparison = 0;
       switch (state.filters.sortField) {
         case 'name': comparison = a.name.localeCompare(b.name, 'ja'); break;
@@ -665,6 +682,7 @@
   }
 
   function render() {
+    renderSortFields();
     const machines = filteredMachines();
     el.count.textContent = state.data.machines.length.toLocaleString('ja-JP');
     el.result.textContent = `${machines.length}件を表示`;
