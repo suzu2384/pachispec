@@ -70,6 +70,7 @@
     view: 'library',
     rankingCriterionId: null,
     tagPane: 'filter',
+    ratingPane: 'filter',
     editorTags: [],
     machineTagDraft: [],
     machineTagTarget: null,
@@ -773,7 +774,7 @@
     if (!criteria.length) {
       state.rankingCriterionId = null;
       tabs.innerHTML = '';
-      list.innerHTML = '<div class="ranking-empty"><strong>評価項目がありません</strong>ヘッダーの「評価項目」から最初の項目を追加してください。</div>';
+      list.innerHTML = '<div class="ranking-empty"><strong>評価項目がありません</strong>ヘッダーの「評価」の管理タブから最初の項目を追加してください。</div>';
       return;
     }
 
@@ -1170,7 +1171,7 @@
     state.tagPane = pane === 'manage' ? 'manage' : 'filter';
     $('#tagFilterPane').hidden = state.tagPane !== 'filter';
     $('#tagManagePane').hidden = state.tagPane !== 'manage';
-    $$('.tag-dialog-tab').forEach(button => button.classList.toggle('active', button.dataset.tagPane === state.tagPane));
+    $$('[data-tag-pane]').forEach(button => button.classList.toggle('active', button.dataset.tagPane === state.tagPane));
     if (state.tagPane === 'filter') renderTagFilterGroups();
     else renderTagManageGroups();
   }
@@ -1285,7 +1286,8 @@
     container.innerHTML = '';
     effectiveCriteria().forEach(criterion => addCriterionChip(criterion));
     $('#newCriterionInput').value = '';
-    el.criteriaDialog.showModal();
+    showRatingPane('manage');
+    if (!el.criteriaDialog.open) el.criteriaDialog.showModal();
   }
 
   function handleStarClick(event) {
@@ -1495,9 +1497,34 @@
     const f = state.filters.rating;
     const active = f.status !== 'all' || f.min !== null || f.max !== null;
     $('#ratingFilterButton').classList.toggle('active-filter', active);
-    $('#ratingFilterButton').textContent = active ? '評価絞込・適用中' : '評価絞込';
-    $('#ratingFilterButton').setAttribute('aria-label', active ? '評価の絞り込みを変更（適用中）' : '評価の絞り込み');
+    $('#ratingFilterButton').textContent = '評価';
+    $('#ratingFilterButton').setAttribute('aria-label', active ? '評価の絞り込みと管理（絞り込み適用中）' : '評価の絞り込みと管理');
   }
+  let switchingRatingPane = false;
+  function showRatingPane(pane) {
+    state.ratingPane = pane;
+    $('#ratingFilterForm').hidden = pane !== 'filter';
+    $('#criteriaForm').hidden = pane !== 'manage';
+    $$('[data-rating-pane]').forEach(button => {
+      const active = button.dataset.ratingPane === pane;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+  }
+  function submitRatingPane() {
+    const form = $(state.ratingPane === 'manage' ? '#criteriaForm' : '#ratingFilterForm');
+    form.requestSubmit();
+    return form.checkValidity();
+  }
+  $$('[data-rating-pane]').forEach(button => button.addEventListener('click', () => {
+    if (button.dataset.ratingPane === state.ratingPane) return;
+    switchingRatingPane = true;
+    let valid;
+    try { valid = submitRatingPane(); } finally { switchingRatingPane = false; }
+    if (valid) button.dataset.ratingPane === 'manage' ? openCriteriaEditor() : openRatingFilter();
+  }));
+  $('[data-save-rating-tools]').addEventListener('click', submitRatingPane);
+
   function openRatingFilter() {
     validateRatingFilter();
     $('#ratingFilterCriterion').innerHTML = filterCriteria().map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
@@ -1506,7 +1533,8 @@
     $('#ratingFilterStatus').value = f.status;
     $('#ratingFilterMin').value = f.min ?? '';
     $('#ratingFilterMax').value = f.max ?? '';
-    updateRangeInputs(); $('#ratingFilterDialog').showModal();
+    updateRangeInputs(); showRatingPane('filter');
+    if (!el.criteriaDialog.open) el.criteriaDialog.showModal();
   }
   function updateRangeInputs() {
     const disabled = $('#ratingFilterStatus').value === 'unrated';
@@ -1555,7 +1583,7 @@
   $('#ratingFilterButton').addEventListener('click', openRatingFilter);
   $('#ratingFilterStatus').addEventListener('change', updateRangeInputs);
   ['#ratingFilterMin', '#ratingFilterMax'].forEach(id => $(id).addEventListener('input', () => $('#ratingFilterMax').setCustomValidity('')));
-  $('#ratingFilterReset').addEventListener('click', () => { state.filters.rating = defaultRatingFilter(); closeDialog($('#ratingFilterDialog')); render(); });
+  $('#ratingFilterReset').addEventListener('click', () => { state.filters.rating = defaultRatingFilter(); closeDialog(el.criteriaDialog); render(); });
   $('#ratingFilterForm').addEventListener('submit', event => {
     event.preventDefault();
     const status = $('#ratingFilterStatus').value;
@@ -1566,7 +1594,7 @@
     }
     if (!$('#ratingFilterForm').reportValidity()) return;
     state.filters.rating = { criterion: $('#ratingFilterCriterion').value, status, min, max };
-    closeDialog($('#ratingFilterDialog')); render();
+    if (!switchingRatingPane) closeDialog(el.criteriaDialog); render();
   });
 
   let toastTimer;
@@ -1578,7 +1606,6 @@
   }
 
   $('#addButton').addEventListener('click', () => openEditor());
-  $('#criteriaButton').addEventListener('click', openCriteriaEditor);
   $('#tagsButton').addEventListener('click', () => openTagDialog('filter'));
   $('#editorTagsButton').addEventListener('click', () => openMachineTagEditor('editor'));
   $('#emptyActionButton').addEventListener('click', () => state.data.machines.length ? clearFilters() : openEditor());
@@ -1647,7 +1674,7 @@
     if (button.dataset.detailAction === 'edit') openEditor(id);
   });
 
-  $$('.tag-dialog-tab').forEach(button => button.addEventListener('click', () => switchTagPane(button.dataset.tagPane)));
+  $$('[data-tag-pane]').forEach(button => button.addEventListener('click', () => switchTagPane(button.dataset.tagPane)));
   $('#tagFilterGroups').addEventListener('change', event => updateTagSelection(event, 'filter'));
   $('#machineTagGroups').addEventListener('change', event => updateTagSelection(event, 'machine'));
   $('#clearTagFiltersButton').addEventListener('click', () => {
@@ -1686,8 +1713,7 @@
     if (dialog.id === 'machineTagDialog') commitMachineTags();
     else if (dialog.id === 'editorDialog') el.form.requestSubmit();
     else if (dialog.id === 'ratingDialog') $('#ratingForm').requestSubmit();
-    else if (dialog.id === 'ratingFilterDialog') $('#ratingFilterForm').requestSubmit();
-    else if (dialog.id === 'criteriaDialog') $('#criteriaForm').requestSubmit();
+    else if (dialog.id === 'criteriaDialog') submitRatingPane();
     else closeDialog(dialog);
   }));
 
@@ -1794,7 +1820,7 @@
     if (el.editorDialog.open) renderRatingFields(editorRatings);
     if (el.ratingDialog.open) renderRatingFields(quickRatings, $('#quickRatingFields'));
     saveData('評価項目を更新しました');
-    closeDialog(el.criteriaDialog);
+    if (!switchingRatingPane) closeDialog(el.criteriaDialog);
     render();
   });
 

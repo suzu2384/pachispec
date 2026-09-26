@@ -33,9 +33,8 @@
           <path d="M13 6h3M13 12h5M13 18h8"/>
         </svg>
       </button>
-      <button class="button button-ghost" id="ratingFilterButton" type="button">評価絞込</button>
+      <button class="button button-ghost" id="ratingFilterButton" type="button">評価</button>
       <button class="button button-ghost" id="tagsButton" type="button">タグ</button>
-      <button class="button button-ghost" id="criteriaButton" type="button">評価項目</button>
       <details class="data-menu"><summary class="button button-ghost">データ管理</summary><div class="data-menu-popup">
         <section class="data-menu-group" aria-labelledby="catalogDataTitle">
           <h2 id="catalogDataTitle">機種・設定データ</h2>
@@ -85,18 +84,7 @@
     </section>
   </main>
 
-  <dialog id="ratingFilterDialog" class="dialog rating-filter-dialog" aria-labelledby="ratingFilterTitle">
-    <form id="ratingFilterForm" method="dialog">
-      <div class="dialog-heading"><h2 id="ratingFilterTitle">評価で絞り込む</h2><button class="icon-button" type="button" data-close-dialog aria-label="キャンセルして閉じる">×</button></div>
-      <div class="rating-filter-content">
-        <label class="field"><span>評価項目</span><select id="ratingFilterCriterion"></select></label>
-        <label class="field"><span>評価の状態</span><select id="ratingFilterStatus"><option value="all">すべて</option><option value="rated">評価済み</option><option value="unrated">未評価</option></select></label>
-        <div class="rating-range"><label class="field"><span>下限（以上）</span><input id="ratingFilterMin" type="number" min="0" max="5" step="any" placeholder="指定なし"></label><label class="field"><span>上限（以下）</span><input id="ratingFilterMax" type="number" min="0" max="5" step="any" placeholder="指定なし"></label></div>
-        <p>一覧・ランキングに反映します。点数の範囲は丸め前の値で判定します。総合・メイン項目は有効な評価が1つでもあれば評価済みです。</p>
-      </div>
-      <div class="dialog-actions"><button id="ratingFilterReset" class="button button-ghost" type="button">評価の絞り込みを解除</button><button class="button button-primary" type="submit">適用</button></div>
-    </form>
-  </dialog>
+
 
   <dialog id="comparisonDialog" class="dialog comparison-dialog" aria-labelledby="comparisonTitle">
     <div class="dialog-heading"><div><span class="eyebrow">機種を比較</span><h2 id="comparisonTitle">同率比較</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button></div>
@@ -232,15 +220,22 @@
     </form>
   </dialog>
 
-  <dialog id="criteriaDialog" class="dialog criteria-dialog">
-    <form id="criteriaForm" method="dialog">
-      <div class="dialog-heading">
-        <div>
-          <span class="eyebrow">ランキングの軸</span>
-          <h2>評価項目を編集</h2>
-        </div>
-        <button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button>
+  <dialog id="criteriaDialog" class="dialog tag-dialog" aria-labelledby="ratingToolsTitle">
+    <div class="dialog-heading"><div><span class="eyebrow">評価</span><h2 id="ratingToolsTitle">絞り込みと管理</h2></div><button class="icon-button" type="button" data-save-rating-tools aria-label="保存して閉じる">×</button></div>
+    <div class="tag-dialog-tabs" role="tablist" aria-label="評価の操作">
+      <button class="tag-dialog-tab active" type="button" role="tab" data-rating-pane="filter" aria-selected="true" aria-controls="ratingFilterForm">絞り込み</button>
+      <button class="tag-dialog-tab" type="button" role="tab" data-rating-pane="manage" aria-selected="false" aria-controls="criteriaForm">管理</button>
+    </div>
+    <form id="ratingFilterForm" method="dialog">
+      <div class="rating-filter-content">
+        <label class="field"><span>評価項目</span><select id="ratingFilterCriterion"></select></label>
+        <label class="field"><span>評価の状態</span><select id="ratingFilterStatus"><option value="all">すべて</option><option value="rated">評価済み</option><option value="unrated">未評価</option></select></label>
+        <div class="rating-range"><label class="field"><span>下限（以上）</span><input id="ratingFilterMin" type="number" min="0" max="5" step="any" placeholder="指定なし"></label><label class="field"><span>上限（以下）</span><input id="ratingFilterMax" type="number" min="0" max="5" step="any" placeholder="指定なし"></label></div>
+        <p>一覧・ランキングに反映します。点数の範囲は丸め前の値で判定します。総合・メイン項目は有効な評価が1つでもあれば評価済みです。</p>
       </div>
+      <div class="dialog-actions"><button id="ratingFilterReset" class="button button-ghost" type="button">評価の絞り込みを解除</button><button class="button button-primary" type="submit">適用</button></div>
+    </form>
+    <form id="criteriaForm" method="dialog" hidden>
       <div class="criteria-content tag-dialog-content">
         <p class="tag-help"><code>メイン項目：サブ項目</code>で追加します。メイン項目だけの登録も可能です。</p>
         <p class="criteria-weight-help">重みは自分の設定として全機種に適用します。空欄は1、2なら2倍、0は平均から除外し、評価入力画面では非表示になります。メイン項目は総合評価、サブ項目は親の評価に反映されます。未評価は計算に含めず、対象がすべて0なら「—」になります。</p>
