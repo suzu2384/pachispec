@@ -83,6 +83,18 @@
     </section>
   </main>
 
+  <dialog id="comparisonDialog" class="dialog comparison-dialog" aria-labelledby="comparisonTitle">
+    <div class="dialog-heading"><div><span class="eyebrow">機種を比較</span><h2 id="comparisonTitle">同率比較</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button></div>
+    <div class="comparison-content">
+      <p id="comparisonSummary" class="comparison-summary"></p>
+      <div class="comparison-selects"><label class="field"><span>機種A</span><select id="compareLeft"></select></label><label class="field"><span>機種B</span><select id="compareRight"></select></label></div>
+      <label class="comparison-filter"><input id="compareDifferencesOnly" type="checkbox">差がある項目だけ表示</label>
+      <p class="comparison-help">差のある行に背景色を付け、評価点が高い方を金色で表示します。</p>
+      <table id="comparisonTable" class="comparison-table"></table>
+      <p id="comparisonEmpty" class="comparison-summary" hidden>比較項目に差はありません。</p>
+    </div>
+  </dialog>
+
   <dialog id="detailDialog" class="dialog detail-dialog">
     <button class="icon-button dialog-close" type="button" data-close-dialog aria-label="閉じる">×</button>
     <div id="detailContent"></div>

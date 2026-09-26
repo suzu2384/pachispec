@@ -71,7 +71,8 @@
     tagPane: 'filter',
     editorTags: [],
     machineTagDraft: [],
-    machineTagTarget: null
+    machineTagTarget: null,
+    comparison: null
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -755,13 +756,73 @@
     list.innerHTML = ranked.map((item, index) => {
       if (item.score !== previousScore) currentRank = index + 1;
       previousScore = item.score;
-      return `<article class="ranking-row">
+      const group = ranked.filter(other => other.score === item.score);
+      const groupHeader = group.length > 1 && (index === 0 || ranked[index - 1].score !== item.score)
+        ? `<div class="tie-group-heading"><span>同率${currentRank}位 · ${group.length}機種</span><button class="small-button" type="button" data-compare-tie="${escapeHtml(item.machine.id)}">比較</button></div>` : '';
+      return `${groupHeader}<article class="ranking-row" data-rank="${currentRank}">
         <div class="rank-number">${currentRank}</div>
         <div class="rank-machine"><strong>${escapeHtml(item.machine.name)}</strong><span>${escapeHtml(item.machine.manufacturer || 'メーカー未設定')}</span></div>
         ${starsTemplate(item.score)}
         <div class="rank-score">${item.score.toFixed(1)}</div>
       </article>`;
     }).join('');
+  }
+
+  function openTieComparison(machineId) {
+    const criterionId = state.rankingCriterionId;
+    const selected = state.data.machines.find(machine => machine.id === machineId);
+    if (!selected) return;
+    const score = ratingValue(selected, criterionId);
+    if (score === null) return;
+    const machines = state.data.machines.filter(machine => ratingValue(machine, criterionId) === score)
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    if (machines.length < 2) return;
+    state.comparison = { criterionId, machines, left: machines[0].id, right: machines[1].id };
+    const criterion = ratingCriteriaWithOverall().find(item => item.id === criterionId);
+    $('#comparisonTitle').textContent = `${criterion?.name || '評価'}の同率比較`;
+    $('#comparisonSummary').textContent = `${machines.length}機種 · ${formatRating(score)}点（丸め前の評価値が同じ機種）`;
+    const options = machines.map(machine => `<option value="${escapeHtml(machine.id)}">${escapeHtml(machine.name)}</option>`).join('');
+    $('#compareLeft').innerHTML = options;
+    $('#compareRight').innerHTML = options;
+    $('#compareLeft').value = state.comparison.left;
+    $('#compareRight').value = state.comparison.right;
+    $('#compareDifferencesOnly').checked = false;
+    renderComparison();
+    $('#comparisonDialog').showModal();
+  }
+
+  function renderComparison() {
+    const comparison = state.comparison;
+    if (!comparison) return;
+    const left = comparison.machines.find(machine => machine.id === comparison.left);
+    const right = comparison.machines.find(machine => machine.id === comparison.right);
+    const rows = [];
+    const addRating = (name, id, sub = false) => {
+      const values = [ratingValue(left, id), ratingValue(right, id)];
+      rows.push({ name, values, text: values.map(formatRating), sub, rating: true });
+    };
+    addRating('総合評価', OVERALL_RATING_ID);
+    visibleCriteria().forEach(criterion => {
+      addRating(criterion.name, criterion.id);
+      criterion.children.filter(child => child.weight !== 0).forEach(child => addRating(child.name, child.id, true));
+    });
+    const addSpec = (name, values, text) => rows.push({ name, values, text });
+    const machines = [left, right];
+    addSpec('初当り確率', machines.map(m => m.basic.initialProbability), machines.map(m => formatProbability(m.basic.initialProbability)));
+    const payouts = machines.map(initialPayoutExpectation);
+    addSpec('初当り出球期待値', payouts.map(p => `${p.kind}:${p.value}`), payouts.map(formatPayoutExpectation));
+    addSpec('RUSH突入率', machines.map(m => m.basic.rushEntryRate), machines.map(m => m.basic.rushEntryRate == null ? '—' : `${m.basic.rushEntryRate}%`));
+    addSpec('実質RUSH突入率', machines.map(effectiveRush), machines.map(m => formatProbability(effectiveRush(m))));
+    addSpec('RUSH継続率', machines.map(m => m.basic.rushContinuationRate), machines.map(m => m.basic.rushContinuationRate == null ? '—' : `${m.basic.rushContinuationRate}%`));
+    const visible = rows.filter(row => !$('#compareDifferencesOnly').checked || row.values[0] !== row.values[1]);
+    $('#comparisonTable').innerHTML = `<thead><tr><th scope="col">項目</th><th scope="col">${escapeHtml(left.name)}</th><th scope="col">${escapeHtml(right.name)}</th></tr></thead><tbody>${visible.map(row => {
+      const different = row.values[0] !== row.values[1];
+      return `<tr class="${different ? 'comparison-different' : ''} ${row.sub ? 'comparison-sub' : ''}"><th scope="row">${escapeHtml(row.name)}</th>${row.text.map((value, i) => {
+        const higher = row.rating && row.values[i] !== null && row.values[1-i] !== null && row.values[i] > row.values[1-i];
+        return `<td${higher ? ' class="comparison-higher"' : ''}>${escapeHtml(value)}</td>`;
+      }).join('')}</tr>`;
+    }).join('')}</tbody>`;
+    $('#comparisonEmpty').hidden = visible.length > 0;
   }
 
   function switchView(view) {
@@ -1358,6 +1419,24 @@
   });
 
   $$('.view-tab').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
+  $('#rankingList').addEventListener('click', event => {
+    const button = event.target.closest('[data-compare-tie]');
+    if (button) openTieComparison(button.dataset.compareTie);
+  });
+  ['compareLeft', 'compareRight'].forEach(id => $('#' + id).addEventListener('change', event => {
+    const comparison = state.comparison;
+    if (!comparison) return;
+    const side = id === 'compareLeft' ? 'left' : 'right';
+    const other = side === 'left' ? 'right' : 'left';
+    const previous = comparison[side];
+    comparison[side] = event.target.value;
+    if (comparison[side] === comparison[other]) comparison[other] = previous;
+    $('#compareLeft').value = comparison.left;
+    $('#compareRight').value = comparison.right;
+    renderComparison();
+  }));
+  $('#compareDifferencesOnly').addEventListener('change', renderComparison);
+
   $('#rankingCriterionTabs').addEventListener('click', event => {
     const button = event.target.closest('[data-criterion-id]');
     if (!button) return;
