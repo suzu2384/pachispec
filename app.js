@@ -756,10 +756,7 @@
     list.innerHTML = ranked.map((item, index) => {
       if (item.score !== previousScore) currentRank = index + 1;
       previousScore = item.score;
-      const group = ranked.filter(other => other.score === item.score);
-      const groupHeader = group.length > 1 && (index === 0 || ranked[index - 1].score !== item.score)
-        ? `<div class="tie-group-heading"><span>同率${currentRank}位 · ${group.length}機種</span><button class="small-button" type="button" data-compare-tie="${escapeHtml(item.machine.id)}">比較</button></div>` : '';
-      return `${groupHeader}<article class="ranking-row" data-rank="${currentRank}">
+      return `<article class="ranking-row" data-rank="${currentRank}">
         <div class="rank-number">${currentRank}</div>
         <div class="rank-machine"><strong>${escapeHtml(item.machine.name)}</strong><span>${escapeHtml(item.machine.manufacturer || 'メーカー未設定')}</span></div>
         ${starsTemplate(item.score)}
