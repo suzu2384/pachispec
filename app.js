@@ -4,6 +4,7 @@
   const STORAGE_KEY = 'pachinko-spec-library-v1';
   const SCHEMA_VERSION = 10;
   const RATINGS_STORAGE_KEY = 'pachispec-personal-ratings-v1';
+  const VIEW_STORAGE_KEY = 'pachispec-view-v1';
   const OVERALL_RATING_ID = '__overall__';
   const DEFAULT_RATING_CRITERIA = [
     { id: 'production', name: '演出' },
@@ -65,7 +66,7 @@
 
   const state = {
     ...loadStores(),
-    filters: { search: '', tags: [], sortField: 'date', sortDirection: 'desc' },
+    filters: { search: '', tags: [], sortField: 'date', sortDirection: 'desc', rating: defaultRatingFilter() },
     view: 'library',
     rankingCriterionId: null,
     tagPane: 'filter',
@@ -95,13 +96,13 @@
     toast: $('#toast')
   };
 
-  function ratingsDocument(ratings, weights = {}) {
-    return { format: 'pachispec-ratings', schemaVersion: 2, ratings, weights };
+  function ratingsDocument(ratings, weights = {}, memos = {}) {
+    return { format: 'pachispec-ratings', schemaVersion: 3, ratings, weights, memos };
   }
 
   function readPersonalData(parsed) {
     let source;
-    if (parsed?.format === 'pachispec-ratings' && [1, 2].includes(parsed.schemaVersion)) {
+    if (parsed?.format === 'pachispec-ratings' && [1, 2, 3].includes(parsed.schemaVersion)) {
       source = parsed.ratings;
     } else if (!parsed?.format && Array.isArray(parsed?.machines)) {
       // Older combined backups can be imported explicitly into either section.
@@ -141,6 +142,13 @@
     }));
   }
 
+  function readPersonalMemos(parsed) {
+    if (parsed?.format !== 'pachispec-ratings' || parsed.schemaVersion < 3) return {};
+    if (!parsed.memos || typeof parsed.memos !== 'object' || Array.isArray(parsed.memos)) throw new Error('評価メモの形式が正しくありません。');
+    if (Object.entries(parsed.memos).some(([id, value]) => !id || typeof value !== 'string')) throw new Error('評価メモは文字列で指定してください。');
+    return { ...parsed.memos };
+  }
+
   function effectiveCriteria() {
     return state.data.settings.ratingCriteria.map(item => ({ ...item,
       weight: Object.hasOwn(state.weights, item.id) ? state.weights[item.id] : null,
@@ -166,27 +174,29 @@
     const data = normalizeData(parsed);
     const personal = localStorage.getItem(RATINGS_STORAGE_KEY);
     let ratings;
+    let memos = {};
     let weights = weightsFromCriteria(parsed.settings?.ratingCriteria);
     if (personal !== null) {
       const saved = JSON.parse(personal);
       ratings = readPersonalData(saved);
+      memos = readPersonalMemos(saved);
       weights = { ...weights, ...readPersonalWeights(saved) };
     } else {
       ratings = readPersonalData(ratingsDocument(Object.fromEntries(parsed.machines.map((machine, i) => [data.machines[i].id, machine.ratings || {}]))));
     }
     // Persist personal settings before removing them from the shared source.
     try {
-      localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(ratings, weights)));
+      localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(ratings, weights, memos)));
     } catch (error) {
       console.warn('評価の分離保存に失敗しました。元のデータを保持しています。', error);
-      return { data, ratings, weights, migrationPending: true };
+      return { data, ratings, weights, memos, migrationPending: true };
     }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (error) {
       console.warn('機種データの保存に失敗しました。元のデータを保持しています。', error);
     }
-    return { data, ratings, weights };
+    return { data, ratings, weights, memos };
   }
 
   function machineRatings(machine) {
@@ -194,17 +204,19 @@
   }
 
   function saveRatings(message) {
-    localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(state.ratings, state.weights)));
+    localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(state.ratings, state.weights, state.memos)));
+    recordChange(message || '評価を変更');
     if (message) showToast(message);
   }
 
-  function setMachineRatings(id, scores) {
+  function setMachineRatings(id, scores, memo, persist = true) {
     const previous = Object.hasOwn(state.ratings, id) ? state.ratings[id] : {};
     // Preserve unmatched item IDs until their definitions are loaded again.
     const activeIds = visibleRatingIds();
     const kept = Object.fromEntries(Object.entries(previous).filter(([key]) => !activeIds.includes(key)));
     state.ratings = { ...state.ratings, [id]: { ...kept, ...scores } };
-    saveRatings();
+    if (memo !== undefined) state.memos = { ...state.memos, [id]: memo };
+    if (persist) saveRatings();
   }
 
   function normalizeData(data) {
@@ -328,7 +340,9 @@
   }
 
   function saveData(message) {
-    persistCatalog();
+    persistSnapshot(snapshot());
+    state.migrationPending = false;
+    recordChange(message || 'データを変更');
     syncSettingsToUrl();
     if (message) showToast(message);
   }
@@ -641,14 +655,24 @@
     $('#sortFieldSelect').value = state.filters.sortField;
   }
 
-  function filteredMachines() {
+  function matchingMachines() {
     const query = state.filters.search.trim().toLocaleLowerCase('ja');
     const machines = state.data.machines.filter(machine => {
       if (query && !searchableText(machine).includes(query)) return false;
       if (state.filters.tags.length && !state.filters.tags.some(tag => machine.tags.includes(tag))) return false;
+      const filter = state.filters.rating;
+      const value = ratingValue(machine, filter.criterion);
+      if (filter.status === 'rated' && value === null) return false;
+      if (filter.status === 'unrated' && value !== null) return false;
+      if (filter.min !== null && (value === null || value < filter.min)) return false;
+      if (filter.max !== null && (value === null || value > filter.max)) return false;
       return true;
     });
+    return machines;
+  }
 
+  function filteredMachines() {
+    const machines = matchingMachines();
     const direction = state.filters.sortDirection === 'asc' ? 1 : -1;
     return machines.sort((a, b) => {
       if (state.filters.sortField.startsWith('rating:')) {
@@ -682,6 +706,7 @@
   }
 
   function render() {
+    validateRatingFilter();
     renderSortFields();
     const machines = filteredMachines();
     el.count.textContent = state.data.machines.length.toLocaleString('ja-JP');
@@ -698,6 +723,7 @@
       if (!hasMachines) $('#emptyActionButton').textContent = '機種を追加';
     }
     renderRanking();
+    rememberView();
   }
 
   function machineCardTemplate(machine) {
@@ -758,14 +784,14 @@
       <button class="criterion-tab ${item.id === state.rankingCriterionId ? 'active' : ''}" type="button" role="tab" aria-selected="${item.id === state.rankingCriterionId}" data-criterion-id="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button>
     `).join('');
 
-    const ranked = state.data.machines
+    const ranked = matchingMachines()
       .map(machine => ({ machine, score: ratingValue(machine, state.rankingCriterionId) }))
       .filter(item => item.score !== null)
       .sort((a, b) => b.score - a.score || a.machine.name.localeCompare(b.machine.name, 'ja'));
 
     if (!ranked.length) {
       const criterion = criteria.find(item => item.id === state.rankingCriterionId);
-      list.innerHTML = `<div class="ranking-empty"><strong>「${escapeHtml(criterion.name)}」はまだ未評価です</strong>機種の編集画面で星を付けると、ここにランキングが表示されます。</div>`;
+      list.innerHTML = `<div class="ranking-empty"><strong>「${escapeHtml(criterion.name)}」で条件に合う評価がありません</strong>検索・評価の絞り込み条件や、機種の評価を確認してください。</div>`;
       return;
     }
 
@@ -850,6 +876,7 @@
       button.setAttribute('aria-pressed', String(active));
     });
     if (state.view === 'ranking') renderRanking();
+    rememberView();
   }
 
   function openDetail(id) {
@@ -895,6 +922,7 @@
     return `<section class="detail-section detail-section-first"><h3>10段階評価</h3>
       <div class="detail-overall-rating"><span>総合評価</span>${starsTemplate(overall)}<strong class="${overall === null ? 'unrated' : ''}">${formatRating(overall)}</strong></div>
       ${rows.length ? `<div class="detail-ratings">${rows.map(item => `<div class="detail-rating"><span>${escapeHtml(item.criterion.name)}</span>${starsTemplate(item.value)}<strong class="${item.value === null ? 'unrated' : ''}">${formatRating(item.value)}</strong></div>`).join('')}</div>` : ''}
+      ${state.memos[machine.id] ? `<div class="personal-rating-note"><h4>評価メモ（自分用）</h4><div class="detail-note">${escapeHtml(state.memos[machine.id])}</div></div>` : ''}
     </section>`;
   }
 
@@ -918,6 +946,7 @@
     $('#initialPayoutValueInput').value = machine?.initialPayoutExpectation?.value ?? '';
     $('#initialPayoutNoteInput').value = machine?.initialPayoutExpectation?.note || '';
     $('#notesInput').value = machine?.notes || '';
+    $('#ratingMemoInput').value = state.memos[machine?.id] || '';
     renderRepeater('special1', machine?.distributions.special1 || []);
     renderRepeater('special2', machine?.distributions.special2 || []);
     renderRepeater('flows', machine?.flows || []);
@@ -932,6 +961,7 @@
     const machine = state.data.machines.find(item => item.id === id);
     if (!machine) return;
     $('#ratingMachineId').value = machine.id;
+    $('#quickRatingMemoInput').value = state.memos[machine.id] || '';
     $('#ratingMachineName').textContent = machine.name;
     renderRatingFields(machineRatings(machine), $('#quickRatingFields'));
     el.ratingDialog.showModal();
@@ -1298,18 +1328,20 @@
     const chip = document.createElement('div');
     chip.className = 'criterion-chip';
     chip.dataset.criterionId = criterion.id || crypto.randomUUID();
-    chip.innerHTML = `<div class="criterion-main-row"><input maxlength="30" data-criterion-name aria-label="メイン評価項目名" value="${escapeHtml(name)}">${ratingWeightInput(criterion.weight)}<button class="remove-criterion" type="button" aria-label="メイン項目を削除">×</button></div><div class="subcriterion-list"></div>`;
+    chip.innerHTML = `<div class="criterion-main-row"><input maxlength="30" data-criterion-name aria-label="メイン評価項目名" value="${escapeHtml(name)}">${ratingWeightInput(criterion.weight)}${reorderButtons()}<button class="remove-criterion" type="button" aria-label="メイン項目を削除">×</button></div><div class="subcriterion-list"></div>`;
     $('#criteriaRows').append(chip);
     (criterion.children || []).forEach(child => addSubcriterionChip(chip, child));
+    updateReorderButtons();
   }
 
   function addSubcriterionChip(criterionChip, child = {}) {
     const row = document.createElement('div');
     row.className = 'subcriterion-chip';
     row.dataset.criterionId = child.id || crypto.randomUUID();
-    row.innerHTML = `<span>↳</span><input maxlength="30" data-subcriterion-name aria-label="サブ評価項目名" value="${escapeHtml(child.name || '')}" placeholder="サブ項目名">${ratingWeightInput(child.weight, true)}<button class="remove-subcriterion" type="button" aria-label="サブ項目を削除">×</button>`;
+    row.innerHTML = `<span>↳</span><input maxlength="30" data-subcriterion-name aria-label="サブ評価項目名" value="${escapeHtml(child.name || '')}" placeholder="サブ項目名">${ratingWeightInput(child.weight, true)}${reorderButtons()}<button class="remove-subcriterion" type="button" aria-label="サブ項目を削除">×</button>`;
     $('.subcriterion-list', criterionChip).append(row);
     if (!child.name) $('[data-subcriterion-name]', row).focus();
+    updateReorderButtons();
   }
 
   function addCriterionFromInput() {
@@ -1344,7 +1376,7 @@
   }
 
   function clearFilters() {
-    state.filters = { search: '', tags: [], sortField: 'date', sortDirection: 'desc' };
+    state.filters = { search: '', tags: [], sortField: 'date', sortDirection: 'desc', rating: defaultRatingFilter() };
     $('#searchInput').value = '';
     $('#sortFieldSelect').value = 'date';
     updateSortDirectionButton();
@@ -1363,7 +1395,7 @@
 
   function exportJson(kind = 'catalog') {
     const personal = kind === 'ratings';
-    const data = personal ? ratingsDocument(state.ratings, state.weights) : normalizeData(state.data);
+    const data = personal ? ratingsDocument(state.ratings, state.weights, state.memos) : normalizeData(state.data);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1380,9 +1412,12 @@
         const imported = readPersonalData(parsed);
         const next = { ...state.ratings, ...imported };
         const weights = { ...state.weights, ...readPersonalWeights(parsed) };
-        localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(next, weights)));
+        const memos = { ...state.memos, ...readPersonalMemos(parsed) };
+        localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(next, weights, memos)));
         state.ratings = next;
         state.weights = weights;
+        state.memos = memos;
+        recordChange('評価データをインポート');
         const knownIds = new Set(state.data.machines.map(machine => machine.id));
         const pending = Object.keys(imported).filter(id => !knownIds.has(id)).length;
         showToast(`自分の評価データをインポートしました${pending ? `（未登録の${pending}機種分も保存）` : ''}`);
@@ -1393,6 +1428,7 @@
         if (state.migrationPending) { saveRatings(); state.migrationPending = false; }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
         state.data = next;
+        recordChange('機種・設定をインポート');
         syncSettingsToUrl();
         clearFilters();
         const hasLegacyScores = parsed.machines.some(machine => Object.keys(machine.ratings || {}).length);
@@ -1404,6 +1440,134 @@
       $(kind === 'ratings' ? '#ratingsImportInput' : '#importInput').value = '';
     }
   }
+
+  const undoHistory = [];
+  let committedSnapshot = null;
+  function snapshot() {
+    return JSON.stringify({ data: state.data, ratings: state.ratings, weights: state.weights, memos: state.memos });
+  }
+  function persistSnapshot(serialized) {
+    const next = JSON.parse(serialized);
+    const previousPersonal = localStorage.getItem(RATINGS_STORAGE_KEY);
+    localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratingsDocument(next.ratings, next.weights, next.memos)));
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next.data)); }
+    catch (error) {
+      if (previousPersonal === null) localStorage.removeItem(RATINGS_STORAGE_KEY);
+      else localStorage.setItem(RATINGS_STORAGE_KEY, previousPersonal);
+      throw error;
+    }
+  }
+  function recordChange(label) {
+    const next = snapshot();
+    if (committedSnapshot !== null && next !== committedSnapshot) {
+      undoHistory.push({ value: committedSnapshot, label });
+      if (undoHistory.length > 20) undoHistory.shift();
+    }
+    if (committedSnapshot !== null) committedSnapshot = next;
+    updateUndoButton();
+  }
+  function updateUndoButton() {
+    const button = $('#undoButton');
+    button.disabled = !undoHistory.length;
+    button.title = undoHistory.length ? `${undoHistory.at(-1).label}を取り消す` : 'このページを開いている間の変更を20回まで戻せます';
+  }
+  function undoChange() {
+    const previous = undoHistory.at(-1);
+    if (!previous) return;
+    try {
+      persistSnapshot(previous.value);
+      Object.assign(state, JSON.parse(previous.value));
+      state.migrationPending = false;
+      committedSnapshot = previous.value;
+      undoHistory.pop();
+      $$('dialog[open]').forEach(closeDialog);
+      syncSettingsToUrl(); render(); updateUndoButton();
+      showToast(`${previous.label}を取り消しました`);
+    } catch (error) { alert(`元に戻せませんでした。\n${error.message}`); }
+  }
+  function defaultRatingFilter() { return { criterion: OVERALL_RATING_ID, status: 'all', min: null, max: null }; }
+  function filterCriteria() {
+    return [{ id: OVERALL_RATING_ID, name: '総合評価' }, ...visibleCriteria().flatMap(item => [item, ...item.children.filter(child => child.weight !== 0).map(child => ({ ...child, name: `${item.name}：${child.name}` }))])];
+  }
+  function validateRatingFilter() {
+    if (!filterCriteria().some(item => item.id === state.filters.rating.criterion)) state.filters.rating = defaultRatingFilter();
+    state.filters.tags = state.filters.tags.filter(tag => state.data.settings.tags.includes(tag));
+    const f = state.filters.rating;
+    const active = f.status !== 'all' || f.min !== null || f.max !== null;
+    $('#ratingFilterButton').classList.toggle('active-filter', active);
+    $('#ratingFilterButton').textContent = active ? '評価絞込・適用中' : '評価絞込';
+    $('#ratingFilterButton').setAttribute('aria-label', active ? '評価の絞り込みを変更（適用中）' : '評価の絞り込み');
+  }
+  function openRatingFilter() {
+    validateRatingFilter();
+    $('#ratingFilterCriterion').innerHTML = filterCriteria().map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+    const f = state.filters.rating;
+    $('#ratingFilterCriterion').value = f.criterion;
+    $('#ratingFilterStatus').value = f.status;
+    $('#ratingFilterMin').value = f.min ?? '';
+    $('#ratingFilterMax').value = f.max ?? '';
+    updateRangeInputs(); $('#ratingFilterDialog').showModal();
+  }
+  function updateRangeInputs() {
+    const disabled = $('#ratingFilterStatus').value === 'unrated';
+    $('#ratingFilterMin').disabled = disabled; $('#ratingFilterMax').disabled = disabled;
+    $('#ratingFilterMax').setCustomValidity('');
+  }
+  function rememberView() {
+    try { localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ filters: state.filters, view: state.view, rankingCriterionId: state.rankingCriterionId })); }
+    catch (_) { /* Browsing remains usable when storage is full. */ }
+  }
+  function restoreView() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(VIEW_STORAGE_KEY));
+      if (!saved || typeof saved !== 'object') return;
+      const f = saved.filters || {};
+      if (typeof f.search === 'string') state.filters.search = f.search;
+      if (Array.isArray(f.tags)) state.filters.tags = f.tags.filter(tag => typeof tag === 'string');
+      if (typeof f.sortField === 'string') state.filters.sortField = f.sortField;
+      state.filters.sortDirection = f.sortDirection === 'asc' ? 'asc' : 'desc';
+      const rating = f.rating || {};
+      state.filters.rating = {
+        criterion: typeof rating.criterion === 'string' ? rating.criterion : OVERALL_RATING_ID,
+        status: ['all', 'rated', 'unrated'].includes(rating.status) ? rating.status : 'all',
+        min: typeof rating.min === 'number' && rating.min >= 0 && rating.min <= 5 ? rating.min : null,
+        max: typeof rating.max === 'number' && rating.max >= 0 && rating.max <= 5 ? rating.max : null
+      };
+      if (state.filters.rating.status === 'unrated') state.filters.rating.min = state.filters.rating.max = null;
+      if (state.filters.rating.min !== null && state.filters.rating.max !== null && state.filters.rating.min > state.filters.rating.max) state.filters.rating = defaultRatingFilter();
+      state.view = saved.view === 'ranking' ? 'ranking' : 'library';
+      state.rankingCriterionId = typeof saved.rankingCriterionId === 'string' ? saved.rankingCriterionId : null;
+    } catch (_) { /* Ignore obsolete or damaged display settings. */ }
+    $('#searchInput').value = state.filters.search;
+    updateSortDirectionButton();
+  }
+  function reorderButtons() {
+    return '<span class="criterion-reorder"><button type="button" data-move="up" aria-label="項目を上へ移動">↑</button><button type="button" data-move="down" aria-label="項目を下へ移動">↓</button></span>';
+  }
+  function updateReorderButtons() {
+    $$('.criterion-chip, .subcriterion-chip', $('#criteriaRows')).forEach(row => {
+      const controls = row.matches('.criterion-chip') ? $('.criterion-main-row', row) : row;
+      $('[data-move="up"]', controls).disabled = !row.previousElementSibling;
+      $('[data-move="down"]', controls).disabled = !row.nextElementSibling;
+    });
+  }
+  $('#undoButton').addEventListener('click', () => { undoChange(); $('.data-menu').open = false; });
+  $('#ratingFilterButton').addEventListener('click', openRatingFilter);
+  $('#ratingFilterStatus').addEventListener('change', updateRangeInputs);
+  ['#ratingFilterMin', '#ratingFilterMax'].forEach(id => $(id).addEventListener('input', () => $('#ratingFilterMax').setCustomValidity('')));
+  $('#ratingFilterReset').addEventListener('click', () => { state.filters.rating = defaultRatingFilter(); closeDialog($('#ratingFilterDialog')); render(); });
+  $('#ratingFilterForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const status = $('#ratingFilterStatus').value;
+    const min = status === 'unrated' ? null : numberOrNull($('#ratingFilterMin').value);
+    const max = status === 'unrated' ? null : numberOrNull($('#ratingFilterMax').value);
+    if (min !== null && max !== null && min > max) {
+      $('#ratingFilterMax').setCustomValidity('上限は下限以上にしてください。'); $('#ratingFilterMax').reportValidity(); return;
+    }
+    if (!$('#ratingFilterForm').reportValidity()) return;
+    state.filters.rating = { criterion: $('#ratingFilterCriterion').value, status, min, max };
+    closeDialog($('#ratingFilterDialog')); render();
+  });
 
   let toastTimer;
   function showToast(message) {
@@ -1456,6 +1620,7 @@
     const button = event.target.closest('[data-criterion-id]');
     if (!button) return;
     state.rankingCriterionId = button.dataset.criterionId;
+    rememberView();
     renderRanking();
   });
 
@@ -1521,6 +1686,7 @@
     if (dialog.id === 'machineTagDialog') commitMachineTags();
     else if (dialog.id === 'editorDialog') el.form.requestSubmit();
     else if (dialog.id === 'ratingDialog') $('#ratingForm').requestSubmit();
+    else if (dialog.id === 'ratingFilterDialog') $('#ratingFilterForm').requestSubmit();
     else if (dialog.id === 'criteriaDialog') $('#criteriaForm').requestSubmit();
     else closeDialog(dialog);
   }));
@@ -1551,7 +1717,7 @@
     event.preventDefault();
     if (!el.form.reportValidity()) return;
     const machine = readMachineFromForm();
-    setMachineRatings(machine.id, readRatings());
+    setMachineRatings(machine.id, readRatings(), $('#ratingMemoInput').value, false);
     const index = state.data.machines.findIndex(item => item.id === machine.id);
     if (index >= 0) state.data.machines[index] = machine;
     else state.data.machines.push(machine);
@@ -1574,7 +1740,7 @@
     event.preventDefault();
     const machine = state.data.machines.find(item => item.id === $('#ratingMachineId').value);
     if (!machine) return;
-    setMachineRatings(machine.id, readRatings($('#quickRatingFields')));
+    setMachineRatings(machine.id, readRatings($('#quickRatingFields')), $('#quickRatingMemoInput').value);
     showToast('評価を保存しました');
     closeDialog(el.ratingDialog);
     render();
@@ -1590,9 +1756,15 @@
   $('#criteriaRows').addEventListener('click', event => {
     const button = event.target.closest('button');
     if (!button) return;
+    if (button.dataset.move) {
+      const row = button.closest('.subcriterion-chip, .criterion-chip');
+      const sibling = button.dataset.move === 'up' ? row.previousElementSibling : row.nextElementSibling;
+      if (sibling) button.dataset.move === 'up' ? sibling.before(row) : sibling.after(row);
+    }
     if (button.classList.contains('add-subcriterion')) addSubcriterionChip(button.closest('.criterion-chip'));
     if (button.classList.contains('remove-subcriterion')) button.closest('.subcriterion-chip').remove();
     if (button.classList.contains('remove-criterion')) button.closest('.criterion-chip').remove();
+    updateReorderButtons();
   });
   $('#criteriaForm').addEventListener('submit', event => {
     event.preventDefault();
@@ -1617,7 +1789,6 @@
       return true;
     });
     state.weights = { ...state.weights, ...weightsFromCriteria(criteria) };
-    saveRatings();
     state.data.settings.ratingCriteria = normalizeData({ ...state.data, settings: { ...state.data.settings, ratingCriteria: criteria } }).settings.ratingCriteria;
     // Keep scores for absent criteria separately; reimporting their IDs restores them.
     if (el.editorDialog.open) renderRatingFields(editorRatings);
@@ -1628,5 +1799,8 @@
   });
 
   updateSortDirectionButton();
-  applyUrlSettings().finally(() => { render(); syncSettingsToUrl(); });
+  applyUrlSettings().finally(() => {
+    restoreView(); render(); switchView(state.view); syncSettingsToUrl();
+    committedSnapshot = snapshot(); updateUndoButton();
+  });
 })();

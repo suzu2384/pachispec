@@ -33,6 +33,7 @@
           <path d="M13 6h3M13 12h5M13 18h8"/>
         </svg>
       </button>
+      <button class="button button-ghost" id="ratingFilterButton" type="button">評価絞込</button>
       <button class="button button-ghost" id="tagsButton" type="button">タグ</button>
       <button class="button button-ghost" id="criteriaButton" type="button">評価項目</button>
       <details class="data-menu"><summary class="button button-ghost">データ管理</summary><div class="data-menu-popup">
@@ -43,10 +44,11 @@
         </section>
         <section class="data-menu-group" aria-labelledby="ratingsDataTitle">
           <h2 id="ratingsDataTitle">自分の評価データ</h2>
-          <p>機種ごとの評価点・項目ごとの重み</p>
+          <p>評価点・重み・自分用の評価メモ</p>
           <div class="data-menu-actions"><button id="ratingsExportButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg><span>エクスポート</span></button><button id="ratingsImportButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4-4 4M5 17v3h14v-3"/></svg><span>インポート</span></button></div>
-          <small>同じIDの評価点・重みを上書きします。</small>
+          <small>同じIDの評価点・重み・メモを上書きします。</small>
         </section>
+        <button class="button button-ghost undo-button" id="undoButton" type="button" disabled>↶ 元に戻す</button>
       </div></details>
       <button class="button button-primary" id="addButton" type="button">＋ 機種を追加</button>
       <input id="importInput" type="file" accept="application/json,.json" hidden>
@@ -83,6 +85,19 @@
     </section>
   </main>
 
+  <dialog id="ratingFilterDialog" class="dialog rating-filter-dialog" aria-labelledby="ratingFilterTitle">
+    <form id="ratingFilterForm" method="dialog">
+      <div class="dialog-heading"><h2 id="ratingFilterTitle">評価で絞り込む</h2><button class="icon-button" type="button" data-close-dialog aria-label="キャンセルして閉じる">×</button></div>
+      <div class="rating-filter-content">
+        <label class="field"><span>評価項目</span><select id="ratingFilterCriterion"></select></label>
+        <label class="field"><span>評価の状態</span><select id="ratingFilterStatus"><option value="all">すべて</option><option value="rated">評価済み</option><option value="unrated">未評価</option></select></label>
+        <div class="rating-range"><label class="field"><span>下限（以上）</span><input id="ratingFilterMin" type="number" min="0" max="5" step="any" placeholder="指定なし"></label><label class="field"><span>上限（以下）</span><input id="ratingFilterMax" type="number" min="0" max="5" step="any" placeholder="指定なし"></label></div>
+        <p>一覧・ランキングに反映します。点数の範囲は丸め前の値で判定します。総合・メイン項目は有効な評価が1つでもあれば評価済みです。</p>
+      </div>
+      <div class="dialog-actions"><button id="ratingFilterReset" class="button button-ghost" type="button">評価の絞り込みを解除</button><button class="button button-primary" type="submit">適用</button></div>
+    </form>
+  </dialog>
+
   <dialog id="comparisonDialog" class="dialog comparison-dialog" aria-labelledby="comparisonTitle">
     <div class="dialog-heading"><div><span class="eyebrow">機種を比較</span><h2 id="comparisonTitle">同率比較</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button></div>
     <div class="comparison-content">
@@ -112,7 +127,7 @@
       <input id="ratingMachineId" type="hidden">
       <div class="quick-rating-content">
         <div class="section-heading"><p>0.5刻みで各項目を評価すると、重みを反映した総合評価が自動計算されます。</p></div>
-        <div id="quickRatingFields" class="rating-fields"></div>
+        <div id="quickRatingFields" class="rating-fields"></div><label class="field personal-memo-field"><span>評価メモ（自分用）</span><textarea id="quickRatingMemoInput" rows="3" placeholder="点数の理由や、遊んだときの印象など"></textarea></label>
       </div>
       <div class="dialog-actions">
         <span class="action-spacer"></span>
@@ -199,7 +214,7 @@
         <section class="form-section">
           <div class="section-heading"><h3>10段階評価</h3></div>
           <p class="section-note">各項目の星を選ぶと、総合評価が各項目の重みを反映した平均値から自動計算されます。同じ星をもう一度押すと未評価に戻せます。</p>
-          <div id="ratingFields" class="rating-fields"></div>
+          <div id="ratingFields" class="rating-fields"></div><label class="field personal-memo-field"><span>評価メモ（自分用）</span><textarea id="ratingMemoInput" rows="3" placeholder="点数の理由や、遊んだときの印象など"></textarea></label>
         </section>
 
         <section class="form-section">
@@ -234,7 +249,7 @@
           <input id="newCriterionInput" maxlength="60" placeholder="例：演出：先読み">
           <button class="button button-ghost" id="addCriterionButton" type="button">＋ 追加</button>
         </div>
-        <div id="criteriaRows" class="criteria-rows tag-manage-groups"></div>
+        <p class="criteria-order-help">↑ ↓ で表示順を変更できます。カードには重み0を除く先頭6項目を表示します。</p><div id="criteriaRows" class="criteria-rows tag-manage-groups"></div>
       </div>
       <div class="dialog-actions">
         <span class="action-spacer"></span>

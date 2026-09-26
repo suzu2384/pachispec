@@ -13,7 +13,7 @@ function harness(values = {}, failKey = null) {
   setItem: (key, value) => { if (key === failKey) throw new Error('quota'); storage.set(key, value); }
  }};
  vm.createContext(context);
- vm.runInContext(source.replace('  const state = {', '  globalThis.api = { loadStores, normalizeData, readPersonalData, ratingsDocument, readPersonalWeights }; return; const state = {'), context);
+ vm.runInContext(source.replace('  const state = {', '  globalThis.api = { loadStores, normalizeData, readPersonalData, ratingsDocument, readPersonalWeights, readPersonalMemos }; return; const state = {'), context);
  return { ...context.api, storage };
 }
 test('legacy scores move to separate storage without changing machine IDs', () => {
@@ -64,7 +64,7 @@ test('wrong file kind and invalid scores are rejected before overwrite', () => {
  assert.throws(() => h.readPersonalData({ format: 'pachispec-ratings', schemaVersion: 1, ratings: [] }));
 });
 
-test('personal v2 retains main/sub weights including zero and default', () => {
+test('personal data retains main/sub weights including zero and default', () => {
  const h = harness();
  const doc = h.ratingsDocument({ m: { a: 4 } }, { main: 2, sub: 0, other: null });
  const restored = h.readPersonalWeights(JSON.parse(JSON.stringify(doc)));
@@ -73,4 +73,22 @@ test('personal v2 retains main/sub weights including zero and default', () => {
  assert.equal(restored.other, null);
  assert.equal(Object.keys(h.readPersonalWeights({ format: 'pachispec-ratings', schemaVersion: 1, ratings: {} })).length, 0);
  assert.throws(() => h.readPersonalWeights({ format: 'pachispec-ratings', schemaVersion: 2, weights: { main: -1 } }));
+});
+
+
+test('personal v3 memos survive reload without entering the shared catalog', () => {
+ const h = harness({ [KEY]: JSON.stringify(legacy), [PERSONAL]: JSON.stringify({ format: 'pachispec-ratings', schemaVersion: 3, ratings: { m: { a: 4 } }, weights: {}, memos: { m: '自分用の感想', unknown: '未登録機種', cleared: '' } }) });
+ const loaded = h.loadStores();
+ assert.equal(loaded.memos.m, '自分用の感想');
+ assert.equal(h.loadStores().memos.unknown, '未登録機種');
+ assert.equal(h.storage.get(KEY).includes('自分用の感想'), false);
+ const restored = h.readPersonalMemos(JSON.parse(JSON.stringify(h.ratingsDocument(loaded.ratings, loaded.weights, loaded.memos))));
+ assert.equal(restored.cleared, '');
+ assert.equal(restored.m, '自分用の感想');
+});
+
+test('legacy personal files have no memos and malformed v3 memos are rejected', () => {
+ const h = harness();
+ assert.equal(Object.keys(h.readPersonalMemos({ format: 'pachispec-ratings', schemaVersion: 2 })).length, 0);
+ for (const memos of [null, [], { m: 123 }]) assert.throws(() => h.readPersonalMemos({ format: 'pachispec-ratings', schemaVersion: 3, memos }));
 });

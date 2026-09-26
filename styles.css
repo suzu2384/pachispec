@@ -499,3 +499,26 @@ textarea { resize: vertical; }
 }
 
 .header-select { max-width: 180px; text-overflow: ellipsis; }
+
+/* Compact personal rating tools */
+.active-filter { color: var(--accent, #eabf68); box-shadow: inset 0 0 0 1px currentColor; }
+.rating-filter-dialog { width: min(440px, calc(100vw - 24px)); }
+.rating-filter-content { padding: 18px 24px; display: grid; gap: 16px; }
+.rating-filter-content p, .criteria-order-help { font-size: .8rem; color: var(--muted, #a5a8b5); line-height: 1.6; }
+.rating-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.rating-range input { min-width: 0; width: 100%; }
+.personal-memo-field { margin-top: 18px; }
+.personal-rating-note { margin-top: 18px; }
+.personal-rating-note h4 { margin: 0 0 8px; font-size: .8rem; color: var(--muted, #a5a8b5); }
+.personal-rating-note .detail-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.criterion-reorder { display: inline-flex; flex-shrink: 0; gap: 2px; }
+.criterion-reorder button { width: 28px; height: 32px; border: 1px solid var(--border, #383b49); background: transparent; color: inherit; border-radius: 6px; cursor: pointer; }
+.criterion-reorder button:disabled { opacity: .25; cursor: default; }
+.criterion-main-row > input, .subcriterion-chip > input { min-width: 0; }
+.undo-button { width: 100%; margin-top: 8px; }
+.undo-button:disabled { opacity: .4; cursor: default; }
+@media (max-width: 520px) {
+  .subcriterion-chip { flex-wrap: wrap; }
+  .subcriterion-chip > input { flex: 1 1 110px; }
+  .rating-filter-content { padding: 16px; }
+}
