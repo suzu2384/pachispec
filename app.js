@@ -68,6 +68,7 @@
     ...loadStores(),
     filters: { search: '', tags: [], sortField: 'date', sortDirection: 'desc', rating: defaultRatingFilter() },
     view: 'library',
+    headerCollapsed: false,
     rankingCriterionId: null,
     tagPane: 'filter',
     ratingPane: 'filter',
@@ -1541,14 +1542,31 @@
     $('#ratingFilterMin').disabled = disabled; $('#ratingFilterMax').disabled = disabled;
     $('#ratingFilterMax').setCustomValidity('');
   }
+  const mobileHeaderQuery = window.matchMedia?.('(max-width: 760px)');
+  function updateHeaderCollapse() {
+    const collapsed = Boolean(mobileHeaderQuery?.matches && state.headerCollapsed);
+    $('#headerTools').hidden = collapsed;
+    const button = $('#headerToggleButton');
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.setAttribute('aria-label', collapsed ? 'ヘッダーの操作を表示する' : 'ヘッダーの操作を折りたたむ');
+    button.title = collapsed ? '操作を表示' : '操作を折りたたむ';
+    if (collapsed) $('.data-menu').open = false;
+  }
+  $('#headerToggleButton').addEventListener('click', () => {
+    state.headerCollapsed = !state.headerCollapsed;
+    updateHeaderCollapse(); rememberView();
+  });
+  mobileHeaderQuery?.addEventListener('change', updateHeaderCollapse);
+
   function rememberView() {
-    try { localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ filters: state.filters, view: state.view, rankingCriterionId: state.rankingCriterionId })); }
+    try { localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ filters: state.filters, view: state.view, rankingCriterionId: state.rankingCriterionId, headerCollapsed: state.headerCollapsed })); }
     catch (_) { /* Browsing remains usable when storage is full. */ }
   }
   function restoreView() {
     try {
       const saved = JSON.parse(localStorage.getItem(VIEW_STORAGE_KEY));
       if (!saved || typeof saved !== 'object') return;
+      state.headerCollapsed = saved.headerCollapsed === true;
       const f = saved.filters || {};
       if (typeof f.search === 'string') state.filters.search = f.search;
       if (Array.isArray(f.tags)) state.filters.tags = f.tags.filter(tag => typeof tag === 'string');
@@ -1826,7 +1844,7 @@
 
   updateSortDirectionButton();
   applyUrlSettings().finally(() => {
-    restoreView(); render(); switchView(state.view); syncSettingsToUrl();
+    restoreView(); updateHeaderCollapse(); render(); switchView(state.view); syncSettingsToUrl();
     committedSnapshot = snapshot(); updateUndoButton();
   });
 })();

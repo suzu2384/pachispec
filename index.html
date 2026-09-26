@@ -21,10 +21,10 @@
       <p class="brand-count"><span id="machineCount">0</span>機種</p>
     </div>
     <nav class="view-tabs" aria-label="表示切り替え">
-      <button class="view-tab active" type="button" data-view="library" aria-pressed="true">機種一覧</button>
-      <button class="view-tab" type="button" data-view="ranking" aria-pressed="false">評価ランキング</button>
+      <button class="view-tab active" type="button" data-view="library" aria-pressed="true"><span class="view-label-desktop">機種一覧</span><span class="view-label-mobile">一覧</span></button>
+      <button class="view-tab" type="button" data-view="ranking" aria-pressed="false"><span class="view-label-desktop">評価ランキング</span><span class="view-label-mobile">ランキング</span></button>
     </nav>
-    <div class="header-tools">
+    <div class="header-tools" id="headerTools">
       <label class="search-box header-search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="機種名・タグを検索"></label>
       <select id="sortFieldSelect" class="header-select" aria-label="並び替える項目"><option value="date">導入日</option><option value="name">機種名</option><option value="rush">実質RUSH突入率</option><option value="payout">初当り出球期待値</option></select>
       <button class="sort-direction-button descending" id="sortDirectionButton" type="button" aria-label="並び順：降順。昇順に切り替え" title="降順（クリックで昇順）">
@@ -53,6 +53,9 @@
       <input id="importInput" type="file" accept="application/json,.json" hidden>
       <input id="ratingsImportInput" type="file" accept="application/json,.json" hidden>
     </div>
+    <button id="headerToggleButton" class="header-toggle-button" type="button" aria-controls="headerTools" aria-expanded="true" aria-label="ヘッダーの操作を折りたたむ">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg>
+    </button>
   </header>
 
   <main>
