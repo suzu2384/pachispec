@@ -75,7 +75,6 @@
     editorTags: [],
     machineTagDraft: [],
     machineTagTarget: null,
-    compareSelecting: false,
     comparisonIds: []
   };
 
@@ -733,8 +732,8 @@
   function machineCardTemplate(machine) {
     const rush = effectiveRush(machine);
     return `
-      <article class="machine-card" data-machine-id="${escapeHtml(machine.id)}" role="${state.compareSelecting ? 'checkbox' : 'button'}" tabindex="0" aria-label="${escapeHtml(machine.name)}${state.compareSelecting ? 'を比較対象に選択' : 'の詳細を表示'}">
-        <div class="card-accent"></div>${state.compareSelecting ? '<span class="comparison-check" aria-hidden="true"></span>' : ''}
+      <article class="machine-card" data-machine-id="${escapeHtml(machine.id)}" role="button" tabindex="0" aria-label="${escapeHtml(machine.name)}の詳細を表示">
+        <div class="card-accent"></div><label class="comparison-check"><input type="checkbox" data-compare-machine="${escapeHtml(machine.id)}" aria-label="${escapeHtml(machine.name)}を比較対象に選択" ${state.comparisonIds.includes(machine.id) ? 'checked' : ''}></label>
         <div class="card-body">
           <h2 title="${escapeHtml(machine.name)}">${escapeHtml(machine.name)}</h2>
           <div class="metric-pair">
@@ -758,7 +757,7 @@
     const average = averageRating(machine);
     const visible = criteria.slice(0, 6);
     const remaining = criteria.length - visible.length;
-    return `<div class="card-evaluation" role="${state.compareSelecting ? 'presentation' : 'button'}" tabindex="${state.compareSelecting ? '-1' : '0'}" aria-label="${escapeHtml(machine.name)}の評価を編集">
+    return `<div class="card-evaluation" role="button" tabindex="0" aria-label="${escapeHtml(machine.name)}の評価を編集">
       <div class="card-evaluation-head"><span>総合評価 <small>重みを反映</small></span><div class="card-overall-score">${starsTemplate(average)}${average !== null ? `<strong>${average.toFixed(1)}</strong>` : '<strong class="unrated">未評価</strong>'}</div></div>
       ${visible.length ? `<div class="card-rating-grid">
         ${visible.map(criterion => {
@@ -821,17 +820,12 @@
 
   function updateComparisonSelection() {
     const machines = selectedComparisonMachines();
-    $('#comparisonSelectionBar').hidden = !state.compareSelecting;
-    $('#compareSelectButton').textContent = state.compareSelecting ? '選択を終了' : '選んで比較';
-    $('#compareSelectButton').setAttribute('aria-pressed', String(state.compareSelecting));
-    $('#comparisonSelectionCount').textContent = `${machines.length}機種を選択`;
+    $('#comparisonSelectionCount').textContent = `${machines.length}件選択`;
     $('#openComparisonButton').disabled = machines.length < 2;
-    $('#clearComparisonButton').disabled = !machines.length;
-    el.grid.classList.toggle('comparison-selecting', state.compareSelecting);
     $$('[data-machine-id]', el.grid).forEach(card => {
       const selected = state.comparisonIds.includes(card.dataset.machineId);
-      card.classList.toggle('comparison-selected', selected && state.compareSelecting);
-      if (state.compareSelecting) card.setAttribute('aria-checked', String(selected));
+      card.classList.toggle('comparison-selected', selected);
+      $('[data-compare-machine]', card).checked = selected;
     });
   }
 
@@ -1660,17 +1654,6 @@
   });
 
   $$('.view-tab').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
-  if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(entries => {
-      document.documentElement.style.setProperty('--app-header-height', `${entries[0].target.getBoundingClientRect().height}px`);
-    }).observe($('.app-header'));
-  }
-
-  $('#compareSelectButton').addEventListener('click', () => {
-    state.compareSelecting = !state.compareSelecting;
-    render();
-  });
-  $('#clearComparisonButton').addEventListener('click', () => { state.comparisonIds = []; updateComparisonSelection(); });
   $('#openComparisonButton').addEventListener('click', openSelectedComparison);
 
   $('#compareDifferencesOnly').addEventListener('change', renderComparison);
@@ -1683,21 +1666,25 @@
     renderRanking();
   });
 
+  el.grid.addEventListener('change', event => {
+    const checkbox = event.target.closest('[data-compare-machine]');
+    if (checkbox) toggleComparisonMachine(checkbox.dataset.compareMachine);
+  });
   el.grid.addEventListener('click', event => {
+    if (event.target.closest('.comparison-check')) return;
     const card = event.target.closest('[data-machine-id]');
     if (!card) return;
     const id = card.dataset.machineId;
-    if (state.compareSelecting) toggleComparisonMachine(id);
-    else if (event.target.closest('.card-evaluation')) openRatingEditor(id);
+    if (event.target.closest('.card-evaluation')) openRatingEditor(id);
     else openDetail(id);
   });
   el.grid.addEventListener('keydown', event => {
+    if (event.target.closest('.comparison-check')) return;
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const card = event.target.closest('[data-machine-id]');
     if (!card) return;
     event.preventDefault();
-    if (state.compareSelecting) toggleComparisonMachine(card.dataset.machineId);
-    else if (event.target.closest('.card-evaluation')) openRatingEditor(card.dataset.machineId);
+    if (event.target.closest('.card-evaluation')) openRatingEditor(card.dataset.machineId);
     else if (event.target === card) openDetail(card.dataset.machineId);
   });
   el.detailContent.addEventListener('click', event => {

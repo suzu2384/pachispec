@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=2" sizes="180x180">
   <link rel="manifest" href="site.webmanifest">
   <meta name="apple-mobile-web-app-title" content="ぱちんこスペック">
-  <link rel="stylesheet" href="styles.css?v=67361231a301">
+  <link rel="stylesheet" href="styles.css?v=9fdee36d97dc">
 </head>
 <body>
   <header class="app-header">
@@ -61,12 +61,11 @@
   <main>
     <section id="libraryView">
     <div class="result-row">
-      <p id="resultSummary">0件を表示</p><button id="compareSelectButton" class="button button-ghost" type="button" aria-pressed="false">選んで比較</button>
+      <p id="resultSummary">0件を表示</p>
+      <span id="comparisonSelectionCount" role="status">0件選択</span>
+      <button id="openComparisonButton" class="button button-ghost" type="button" disabled>比較</button>
     </div>
 
-    <div id="comparisonSelectionBar" class="comparison-selection-bar" hidden>
-      <span id="comparisonSelectionCount" role="status">0機種を選択</span><button id="clearComparisonButton" class="button button-ghost" type="button">解除</button><button id="openComparisonButton" class="button button-primary" type="button" disabled>比較する</button>
-    </div>
     <section id="machineGrid" class="machine-grid" aria-live="polite"></section>
 
     <section id="emptyState" class="empty-state" hidden>
@@ -299,6 +298,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=898f243ea0e9"></script>
+  <script src="app.js?v=d1660c861aaf"></script>
 </body>
 </html>
