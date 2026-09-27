@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pachinko-spec-library-v1';
-  const SCHEMA_VERSION = 10;
+  const SCHEMA_VERSION = 11;
   const RATINGS_STORAGE_KEY = 'pachispec-personal-ratings-v1';
   const VIEW_STORAGE_KEY = 'pachispec-view-v1';
   const OVERALL_RATING_ID = '__overall__';
@@ -282,6 +282,11 @@
       },
       flows: Array.isArray(machine.flows) ? machine.flows : [],
       customSpecs: Array.isArray(machine.customSpecs) ? machine.customSpecs : [],
+      specEvidence: machine.specEvidence && typeof machine.specEvidence === 'object' ? {
+        sourceUrl: String(machine.specEvidence.sourceUrl || ''), checkedAt: String(machine.specEvidence.checkedAt || ''),
+        probabilityLabel: String(machine.specEvidence.probabilityLabel || ''), payoutUnit: String(machine.specEvidence.payoutUnit || ''),
+        entryBasisConfirmed: machine.specEvidence.entryBasisConfirmed === true, note: String(machine.specEvidence.note || '')
+      } : null,
       rushPayoutModel: normalizeRushPayoutModel(machine.rushPayoutModel),
       initialPayoutExpectation: normalizePayoutExpectation(machine.initialPayoutExpectation),
       notes: machine.notes || '',
@@ -297,6 +302,7 @@
   }
 
   function normalizeRushPayoutModel(model) {
+    if (model?.version === 2) return PachiSpecModel.normalize(model);
     if (!model || !Array.isArray(model.states)) return null;
     return {
       version: Number(model.version) || 1,
@@ -450,6 +456,7 @@
   }
 
   function effectiveRush(machine) {
+    if (machine.specEvidence && machine.specEvidence.entryBasisConfirmed !== true) return null;
     const probability = numberOrNull(machine.basic.initialProbability);
     const entryRate = numberOrNull(machine.basic.rushEntryRate);
     if (!probability || !entryRate || entryRate <= 0) return null;
@@ -490,6 +497,7 @@
 
   function initialPayoutExpectation(machine) {
     const saved = normalizePayoutExpectation(machine.initialPayoutExpectation);
+    if (machine.specEvidence && saved.kind === 'auto') return PachiSpecModel.initialExpectation((machine.distributions?.special1 || []).map(row => ({ ...row, rate: parseSpecNumber(row.rate) })));
     if (saved.kind !== 'auto' && saved.kind !== 'unavailable' && saved.value !== null) return saved;
     const calculated = calculatedPayoutExpectation(machine);
     if (calculated !== null) return { kind: 'exact', value: calculated, note: '特図1振り分けから自動算出' };
@@ -506,7 +514,21 @@
     return value;
   }
 
-  function rushPayoutDistribution(machine, cap = 12000) {
+  function rushPayoutAnalysis(machine) {
+    const cache = rushPayoutAnalysis.cache ||= new WeakMap();
+    if (cache.has(machine)) return cache.get(machine);
+    let result;
+    if (machine.rushPayoutModel?.version === 2) result = PachiSpecModel.calculate(machine.rushPayoutModel);
+    else if (machine.rushPayoutModel?.states?.length > 1 || machine.rushPayoutModel?.specialMechanics?.length) {
+      result = { distribution: null, issues: ['旧形式のモード・特殊条件を質問形式で確認してください。'], approximate: true };
+    } else result = { distribution: legacyRushPayoutDistribution(machine), issues: ['旧方式の参考値です。単一の継続率と振り分けが続く前提で、モード移行は未確認です。'], approximate: true, legacy: true };
+    cache.set(machine, result);
+    return result;
+  }
+
+  function rushPayoutDistribution(machine) { return rushPayoutAnalysis(machine).distribution; }
+
+  function legacyRushPayoutDistribution(machine, cap = 12000) {
     const model = machine.rushPayoutModel;
     const stateModel = model?.states?.find(state => state.id === model.entryStateId) || model?.states?.[0];
     const continuation = numberOrNull(stateModel?.continuationRate ?? machine.basic?.rushContinuationRate);
@@ -571,22 +593,33 @@
   function payoutSummaryTemplate(machine) {
     const distribution = rushPayoutDistribution(machine);
     if (!distribution) {
-      return `<div class="payout-summary payout-summary-empty"><div class="payout-summary-head"><span>RUSH出球分布</span><small>12,000個上限</small></div><p>特図2の出球振り分け登録後に表示</p></div>`;
+      return `<div class="payout-summary payout-summary-empty"><div class="payout-summary-head"><span>RUSH出球分布</span><small>12,000個上限</small></div><p>条件未確認・情報不足（詳細で確認）</p></div>`;
     }
     const items = [...distribution]
       .sort((a, b) => b.probability - a.probability || a.payout - b.payout)
       .slice(0, 4)
       .sort((a, b) => a.payout - b.payout);
-    const quality = machine.rushPayoutModel?.status === 'exact' ? '公開振り分け' : '概算';
+    const analysis = rushPayoutAnalysis(machine);
+    const quality = analysis.legacy ? '旧方式の参考値' : analysis.approximate ? '概算' : '入力条件で算出';
     return `<div class="payout-summary"><div class="payout-summary-head"><span>主なRUSH出球分布</span><small>${quality}・12,000個以上を集約</small></div><div class="payout-summary-grid">${items.map(item => `<div><span>${formatDistributionPayout(item)}</span><strong>${item.probability.toFixed(1)}%</strong></div>`).join('')}</div></div>`;
   }
 
   function payoutDistributionDetailTemplate(machine) {
     const distribution = rushPayoutDistribution(machine);
-    if (!distribution) return '';
-    const quality = machine.rushPayoutModel?.status === 'exact' ? '公開振り分け' : '概算';
-    const note = machine.rushPayoutModel?.note || 'RUSH継続率と特図2振り分けから算出。';
+    if (!distribution) return `<section class="detail-section"><h3>RUSH出球分布：未算出</h3><ul class="wizard-issues">${rushPayoutAnalysis(machine).issues.map(issue => `<li>${escapeHtml(issue)}</li>`).join('')}</ul><p class="distribution-note">編集 → 質問に答えてスペックを入力、から不足条件を確認できます。</p></section>`;
+    const analysis = rushPayoutAnalysis(machine);
+    const quality = analysis.legacy ? '旧方式の参考値' : analysis.approximate ? '概算' : '入力条件で算出';
+    const note = analysis.legacy ? analysis.issues.join(' ') : `RUSH突入後の追加出球。初当り出球を除外。${machine.rushPayoutModel.payoutUnit === 'net' ? '差玉・獲得出球' : '払出出球'}で算出。各モードの抽選・振り分け・移行先を反映。`;
     return `<section class="detail-section"><h3>RUSH出球分布 <small>${quality}</small></h3><p class="distribution-note">${escapeHtml(note)} 12,000個以降は「12,000個以上」に集約しています。</p><div class="payout-distribution-table">${distribution.map(item => `<div><span>${formatDistributionPayout(item)}</span><strong>${item.probability.toFixed(1)}%</strong></div>`).join('')}</div></section>`;
+  }
+
+  function modeSpecDetailTemplate(machine) {
+    const model = machine.rushPayoutModel;
+    const evidence = machine.specEvidence;
+    const modeNames = new Map((model?.states || []).map(mode => [mode.id, mode.name]));
+    const target = id => id === 'end' ? '通常時へ終了' : modeNames.get(id) || '不明';
+    const urlLink = url => /^https?:\/\//i.test(url || '') ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">参照ページを開く</a>` : '';
+    return `${model?.version === 2 ? `<section class="detail-section"><h3>モード別の入力条件</h3>${model.states.map(mode => `<div class="mode-spec-detail"><h4>${escapeHtml(mode.name || '名称未入力')}</h4><p>${escapeHtml(({st:`1/${mode.hitProbability ?? '未入力'}を${mode.spins ?? '未入力'}回抽選`,next:'次の当りまで継続',rate:`掲載継続率${mode.continuationRate ?? '未入力'}%による概算`,unknown:'特殊条件・未確認'})[mode.method] || '方式未確認')}</p>${mode.method !== 'next' ? `<p>当らなかった後：${escapeHtml(target(mode.onMiss))}</p>` : ''}${mode.outcomes.map(row => `<p>${escapeHtml(row.label || '当り')}：${escapeHtml(row.rate ?? '—')}% ／ ${escapeHtml(row.payoutText || '出球不明')} → ${escapeHtml(target(row.nextStateId))}</p>`).join('')}<p>${escapeHtml(mode.note || '')} ${urlLink(mode.sourceUrl)}</p></div>`).join('')}</section>` : ''}${evidence ? `<section class="detail-section"><h3>参照情報</h3><p>${urlLink(evidence.sourceUrl)} ${escapeHtml(evidence.checkedAt || '')}</p><p>初当りの名称：${escapeHtml(evidence.probabilityLabel || '未確認')} ／ 突入率と同じ対象：${evidence.entryBasisConfirmed ? '確認済み' : '未確認'}</p><div class="detail-note">${escapeHtml(evidence.note)}</div></section>` : ''}`;
   }
 
   function formatRating(value) {
@@ -912,7 +945,7 @@
         ${detailMetric('RUSH中当り', formatProbability(machine.basic.rushHitProbability))}
         ${detailMetric('RUSH継続率', machine.basic.rushContinuationRate != null ? `${machine.basic.rushContinuationRate}%` : '—')}
       </div>
-      ${payoutDistributionDetailTemplate(machine)}
+      ${payoutDistributionDetailTemplate(machine)}${modeSpecDetailTemplate(machine)}
       ${machine.flows.length ? `<section class="detail-section"><h3>状態遷移</h3><div class="flow">${machine.flows.map(item => `<div class="flow-step"><strong>${escapeHtml(item.from)}</strong><span class="flow-arrow">→</span><strong>${escapeHtml(item.to)}</strong>${item.rate ? `<span class="flow-rate">${escapeHtml(item.rate)}</span>` : ''}</div>`).join('')}</div></section>` : ''}
       ${(machine.distributions.special1.length || machine.distributions.special2.length) ? `<section class="detail-section"><h3>大当り振り分け</h3><div class="distribution-grid">${distributionTemplate('特図1', machine.distributions.special1)}${distributionTemplate('特図2', machine.distributions.special2)}</div></section>` : ''}
       ${machine.customSpecs.length ? `<section class="detail-section"><h3>その他のスペック</h3><div class="spec-list">${machine.customSpecs.map(item => `<div class="spec-item"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>`).join('')}</div></section>` : ''}
@@ -941,6 +974,8 @@
 
   function openEditor(id = null) {
     const machine = id ? state.data.machines.find(item => item.id === id) : null;
+    state.editorRushModel = structuredClone(machine?.rushPayoutModel || null);
+    state.editorSpecEvidence = structuredClone(machine?.specEvidence || null);
     $('#editorTitle').textContent = machine ? '機種を編集' : '機種を追加';
     $('#deleteButton').hidden = !machine;
     $('#machineId').value = machine?.id || '';
@@ -968,6 +1003,7 @@
     updateRushPreview();
     updateInitialPayoutPreview();
     el.editorDialog.showModal();
+    if (!machine) openSpecWizard();
   }
 
   function openRatingEditor(id) {
@@ -1096,7 +1132,8 @@
       distributions: { special1, special2 },
       flows: readRows('flows'),
       customSpecs: readRows('customSpecs'),
-      rushPayoutModel: existing?.rushPayoutModel || null,
+      rushPayoutModel: state.editorRushModel,
+      specEvidence: state.editorSpecEvidence,
       initialPayoutExpectation: expectation,
       notes: $('#notesInput').value.trim(),
       createdAt: existing?.createdAt || now,
@@ -1104,14 +1141,42 @@
     });
   }
 
+  function openSpecWizard() {
+    const current = readMachineFromForm();
+    PachiSpecWizard.open(current, machine => {
+      state.editorRushModel = machine.rushPayoutModel;
+      state.editorSpecEvidence = machine.specEvidence;
+      $('#nameInput').value = machine.name;
+      $('#introductionDateInput').value = machine.introductionDate || '';
+      $('#initialProbabilityInput').value = machine.basic.initialProbability ?? '';
+      $('#rushEntryRateInput').value = machine.basic.rushEntryRate ?? '';
+      const entries = machine.rushPayoutModel.entries || [];
+      const first = entries.length === 1 ? machine.rushPayoutModel.states.find(mode => mode.id === entries[0].stateId) : null;
+      $('#rushHitProbabilityInput').value = first?.hitProbability ?? '';
+      $('#rushHitTypeInput').value = ['実質当り確率','図柄揃い確率','大当り確率','普図抽選確率','確変中確率'].includes(first?.drawType) ? first.drawType : 'その他';
+      $('#rushHitNoteInput').value = first ? `開始モード：${first.name}。モード別条件を参照。` : 'モード別条件を参照。';
+      $('#rushContinuationRateInput').value = first?.method === 'rate' ? first.continuationRate ?? '' : '';
+      $('#initialPayoutKindInput').value = machine.initialPayoutExpectation.kind;
+      $('#initialPayoutValueInput').value = machine.initialPayoutExpectation.value ?? '';
+      $('#initialPayoutNoteInput').value = machine.initialPayoutExpectation.note;
+      renderRepeater('special1', machine.distributions.special1);
+      renderRepeater('special2', machine.distributions.special2);
+      renderRepeater('flows', machine.flows);
+      updateRushPreview(); updateInitialPayoutPreview();
+      showToast('入力内容を反映しました。機種編集を保存すると確定します');
+    });
+  }
+  $('#specWizardButton').addEventListener('click', openSpecWizard);
+
   function updateRushPreview() {
-    const machine = { basic: { initialProbability: $('#initialProbabilityInput').value, rushEntryRate: $('#rushEntryRateInput').value } };
+    const machine = { basic: { initialProbability: $('#initialProbabilityInput').value, rushEntryRate: $('#rushEntryRateInput').value }, specEvidence: state.editorSpecEvidence };
     $('#rushProbabilityPreview').textContent = formatProbability(effectiveRush(machine));
   }
 
   function updateInitialPayoutPreview() {
     const machine = {
       basic: { initialPayout: null },
+      specEvidence: state.editorSpecEvidence,
       distributions: { special1: readRows('special1') },
       initialPayoutExpectation: {
         kind: $('#initialPayoutKindInput').value,
@@ -1730,7 +1795,7 @@
 
   $$('[data-close-dialog]').forEach(button => button.addEventListener('click', () => closeDialog(button.closest('dialog'))));
   $$('.dialog').forEach(dialog => dialog.addEventListener('click', event => {
-    if (event.target !== dialog) return;
+    if (event.target !== dialog || dialog.id === 'specWizardDialog') return;
     if (dialog.id === 'machineTagDialog') commitMachineTags();
     else if (dialog.id === 'editorDialog') el.form.requestSubmit();
     else if (dialog.id === 'ratingDialog') $('#ratingForm').requestSubmit();

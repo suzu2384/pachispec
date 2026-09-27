@@ -575,3 +575,24 @@ textarea { resize: vertical; }
   .result-row { padding-right: 48px; gap: 6px 8px; }
   #comparisonSelectionCount { padding-left: 8px; }
 }
+
+
+.spec-wizard-dialog { width: min(800px, calc(100% - 24px)); }
+.spec-wizard-body { padding: 18px 24px; max-height: calc(100dvh - 220px); overflow-y: auto; }
+.spec-wizard-body .field { margin-bottom: 12px; }
+.wizard-help, .wizard-issues { color: var(--muted); font-size: .84rem; line-height: 1.7; }
+.wizard-issues { padding-left: 22px; }
+.wizard-check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; font-size: .85rem; line-height: 1.7; }
+.wizard-check input { width: 20px; height: 20px; min-height: 20px; margin-top: 4px; flex: 0 0 auto; accent-color: var(--accent); }
+.wizard-outcome { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px 14px; padding: 14px; margin: 14px 0; border: 1px solid var(--line); border-radius: 12px; }
+.wizard-mode-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 20px; }
+.wizard-mode-tabs button { overflow-wrap: anywhere; }
+.mode-spec-detail { padding: 12px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.mode-spec-detail p { font-size: .85rem; margin-bottom: 6px; overflow-wrap: anywhere; }
+#specWizardStep { font-size: .82rem; color: var(--muted); margin: 8px 0 0; }
+@media (max-width: 520px) {
+ .spec-wizard-body { padding: 14px; max-height: calc(100dvh - 220px); }
+ .wizard-outcome { grid-template-columns: 1fr; }
+ .spec-wizard-body input, .spec-wizard-body select { font-size: 16px; }
+ #specWizardButton { white-space: normal; font-size: .78rem; }
+}

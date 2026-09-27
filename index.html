@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=2" sizes="180x180">
   <link rel="manifest" href="site.webmanifest">
   <meta name="apple-mobile-web-app-title" content="ぱちんこスペック">
-  <link rel="stylesheet" href="styles.css?v=9fdee36d97dc">
+  <link rel="stylesheet" href="styles.css?v=0dc1b9343c40">
 </head>
 <body>
   <header class="app-header">
@@ -130,6 +130,14 @@
     </form>
   </dialog>
 
+  <dialog id="specWizardDialog" class="dialog spec-wizard-dialog" aria-labelledby="specWizardTitle">
+    <form id="specWizardForm">
+      <div class="dialog-heading"><div><h2 id="specWizardTitle">ページを見ながらスペック入力</h2><p id="specWizardStep" aria-live="polite"></p></div><button class="icon-button" id="specWizardSaveDraft" type="button" aria-label="途中の入力を編集画面に反映して閉じる">×</button></div>
+      <div id="specWizardBody" class="spec-wizard-body"></div>
+      <div class="dialog-actions"><button class="button button-ghost" type="button" id="specWizardCancel">変更を破棄</button><span class="action-spacer"></span><button class="button button-ghost" type="button" id="specWizardBack">戻る</button><button class="button button-primary" type="submit" id="specWizardNext">次へ</button></div>
+    </form>
+  </dialog>
+
   <dialog id="editorDialog" class="dialog editor-dialog">
     <form id="editorForm" method="dialog">
       <div class="dialog-heading">
@@ -156,12 +164,12 @@
         </section>
 
         <section class="form-section">
-          <h3>主要スペック</h3>
+          <div class="section-heading"><h3>主要スペック</h3><button class="button button-primary" type="button" id="specWizardButton">質問に答えてスペックを入力</button></div><p class="section-note">公式・P-WORLD等の記載を見ながら入力できます。不明な条件はそのまま保存できます。</p>
           <div class="form-grid four-columns">
-            <label class="field"><span>通常時 1/</span><input id="initialProbabilityInput" type="number" min="0" step="0.001" placeholder="319.7"></label>
-            <label class="field"><span>RUSH突入率 %</span><input id="rushEntryRateInput" type="number" min="0" max="100" step="0.1" placeholder="50"></label>
-            <label class="field"><span>RUSH継続率 %</span><input id="rushContinuationRateInput" type="number" min="0" max="100" step="0.1" placeholder="81"></label>
-            <label class="field"><span>RUSH中当り 1/</span><input id="rushHitProbabilityInput" type="number" min="0" step="0.001" placeholder="99.9"></label>
+            <label class="field"><span>通常時 1/</span><input id="initialProbabilityInput" type="number" min="0" step="any" placeholder="319.7"></label>
+            <label class="field"><span>RUSH突入率 %</span><input id="rushEntryRateInput" type="number" min="0" max="100" step="any" placeholder="50"></label>
+            <label class="field"><span>RUSH継続率 %</span><input id="rushContinuationRateInput" type="number" min="0" max="100" step="any" placeholder="81"></label>
+            <label class="field"><span>RUSH中当り 1/</span><input id="rushHitProbabilityInput" type="number" min="0" step="any" placeholder="99.9"></label>
             <label class="field"><span>RUSH中確率の種類</span><select id="rushHitTypeInput"><option value="実質当り確率">実質当り確率</option><option value="図柄揃い確率">図柄揃い確率</option><option value="大当り確率">大当り確率</option><option value="普図抽選確率">普図抽選確率</option><option value="確変中確率">確変中確率</option><option value="その他">その他</option></select></label>
             <label class="field field-wide"><span>RUSH中確率の補足</span><input id="rushHitNoteInput" placeholder="普図抽選、図柄揃いのみ等"></label>
           </div>
@@ -177,7 +185,7 @@
           </div>
           <div class="form-grid">
             <label class="field"><span>期待値の扱い</span><select id="initialPayoutKindInput"><option value="auto">自動計算</option><option value="exact">確定値</option><option value="minimum">最低値</option><option value="estimate">概算</option><option value="unavailable">未算出</option></select></label>
-            <label class="field"><span>期待値 個</span><input id="initialPayoutValueInput" type="number" min="0" step="0.1" placeholder="自動計算時は空欄"></label>
+            <label class="field"><span>期待値 個</span><input id="initialPayoutValueInput" type="number" min="0" step="any" placeholder="自動計算時は空欄"></label>
             <label class="field field-wide"><span>期待値の補足</span><input id="initialPayoutNoteInput" placeholder="例：可変出球を最低3,000個として算出"></label>
           </div>
         </section>
@@ -189,13 +197,13 @@
 
         <section class="form-section">
           <div class="section-heading"><h3>特図2 振り分け</h3><button class="small-button" type="button" data-add-row="special2">＋ 行を追加</button></div>
-          <p class="section-note">割合の合計が100%で、出球が単一の数値として登録されている場合、RUSH出球分布を自動計算します。</p>
+          <p class="section-note">質問形式で設定した機種はモード別の条件で計算します。この表は表示用です。モード条件の変更は「質問に答えてスペックを入力」から行ってください。</p>
           <div id="special2Rows" class="repeater"></div>
         </section>
 
         <section class="form-section">
           <div class="section-heading"><h3>状態遷移</h3><button class="small-button" type="button" data-add-row="flows">＋ 遷移を追加</button></div>
-          <p class="section-note">通常時→RUSH→LTなど、モード間の流れを登録できます。</p>
+          <p class="section-note">表示用のメモです。計算に使う移行先は質問形式で設定します。</p>
           <div id="flowRows" class="repeater"></div>
         </section>
 
@@ -298,6 +306,8 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=d1660c861aaf"></script>
+  <script src="spec-model.js?v=7ee62daf81a7"></script>
+  <script src="spec-wizard.js?v=f0b56942c023"></script>
+  <script src="app.js?v=e238340e9de0"></script>
 </body>
 </html>
