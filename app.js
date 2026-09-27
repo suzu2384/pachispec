@@ -75,7 +75,8 @@
     editorTags: [],
     machineTagDraft: [],
     machineTagTarget: null,
-    comparison: null
+    compareSelecting: false,
+    comparisonIds: []
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -714,6 +715,7 @@
     el.count.textContent = state.data.machines.length.toLocaleString('ja-JP');
     el.result.textContent = `${machines.length}件を表示`;
     el.grid.innerHTML = machines.map(machineCardTemplate).join('');
+    updateComparisonSelection();
 
     const hasMachines = state.data.machines.length > 0;
     el.grid.hidden = machines.length === 0;
@@ -731,8 +733,8 @@
   function machineCardTemplate(machine) {
     const rush = effectiveRush(machine);
     return `
-      <article class="machine-card" data-machine-id="${escapeHtml(machine.id)}" role="button" tabindex="0" aria-label="${escapeHtml(machine.name)}の詳細を表示">
-        <div class="card-accent"></div>
+      <article class="machine-card" data-machine-id="${escapeHtml(machine.id)}" role="${state.compareSelecting ? 'checkbox' : 'button'}" tabindex="0" aria-label="${escapeHtml(machine.name)}${state.compareSelecting ? 'を比較対象に選択' : 'の詳細を表示'}">
+        <div class="card-accent"></div>${state.compareSelecting ? '<span class="comparison-check" aria-hidden="true"></span>' : ''}
         <div class="card-body">
           <h2 title="${escapeHtml(machine.name)}">${escapeHtml(machine.name)}</h2>
           <div class="metric-pair">
@@ -756,7 +758,7 @@
     const average = averageRating(machine);
     const visible = criteria.slice(0, 6);
     const remaining = criteria.length - visible.length;
-    return `<div class="card-evaluation" role="button" tabindex="0" aria-label="${escapeHtml(machine.name)}の評価を編集">
+    return `<div class="card-evaluation" role="${state.compareSelecting ? 'presentation' : 'button'}" tabindex="${state.compareSelecting ? '-1' : '0'}" aria-label="${escapeHtml(machine.name)}の評価を編集">
       <div class="card-evaluation-head"><span>総合評価 <small>重みを反映</small></span><div class="card-overall-score">${starsTemplate(average)}${average !== null ? `<strong>${average.toFixed(1)}</strong>` : '<strong class="unrated">未評価</strong>'}</div></div>
       ${visible.length ? `<div class="card-rating-grid">
         ${visible.map(criterion => {
@@ -811,37 +813,50 @@
     }).join('');
   }
 
-  function openTieComparison(machineId) {
-    const criterionId = state.rankingCriterionId;
-    const selected = state.data.machines.find(machine => machine.id === machineId);
-    if (!selected) return;
-    const score = ratingValue(selected, criterionId);
-    if (score === null) return;
-    const machines = state.data.machines.filter(machine => ratingValue(machine, criterionId) === score)
-      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  function selectedComparisonMachines() {
+    const byId = new Map(state.data.machines.map(machine => [machine.id, machine]));
+    state.comparisonIds = state.comparisonIds.filter(id => byId.has(id));
+    return state.comparisonIds.map(id => byId.get(id));
+  }
+
+  function updateComparisonSelection() {
+    const machines = selectedComparisonMachines();
+    $('#comparisonSelectionBar').hidden = !state.compareSelecting;
+    $('#compareSelectButton').textContent = state.compareSelecting ? '選択を終了' : '選んで比較';
+    $('#compareSelectButton').setAttribute('aria-pressed', String(state.compareSelecting));
+    $('#comparisonSelectionCount').textContent = `${machines.length}機種を選択`;
+    $('#openComparisonButton').disabled = machines.length < 2;
+    $('#clearComparisonButton').disabled = !machines.length;
+    el.grid.classList.toggle('comparison-selecting', state.compareSelecting);
+    $$('[data-machine-id]', el.grid).forEach(card => {
+      const selected = state.comparisonIds.includes(card.dataset.machineId);
+      card.classList.toggle('comparison-selected', selected && state.compareSelecting);
+      if (state.compareSelecting) card.setAttribute('aria-checked', String(selected));
+    });
+  }
+
+  function toggleComparisonMachine(id) {
+    if (state.comparisonIds.includes(id)) state.comparisonIds = state.comparisonIds.filter(value => value !== id);
+    else state.comparisonIds.push(id);
+    updateComparisonSelection();
+  }
+
+  function openSelectedComparison() {
+    const machines = selectedComparisonMachines();
     if (machines.length < 2) return;
-    state.comparison = { criterionId, machines, left: machines[0].id, right: machines[1].id };
-    const criterion = ratingCriteriaWithOverall().find(item => item.id === criterionId);
-    $('#comparisonTitle').textContent = `${criterion?.name || '評価'}の同率比較`;
-    $('#comparisonSummary').textContent = `${machines.length}機種 · ${formatRating(score)}点（丸め前の評価値が同じ機種）`;
-    const options = machines.map(machine => `<option value="${escapeHtml(machine.id)}">${escapeHtml(machine.name)}</option>`).join('');
-    $('#compareLeft').innerHTML = options;
-    $('#compareRight').innerHTML = options;
-    $('#compareLeft').value = state.comparison.left;
-    $('#compareRight').value = state.comparison.right;
+    $('#comparisonTitle').textContent = '機種を比較';
+    $('#comparisonSummary').textContent = `${machines.length}機種を選択順に表示 · 横にスクロールできます`;
     $('#compareDifferencesOnly').checked = false;
     renderComparison();
     $('#comparisonDialog').showModal();
   }
 
   function renderComparison() {
-    const comparison = state.comparison;
-    if (!comparison) return;
-    const left = comparison.machines.find(machine => machine.id === comparison.left);
-    const right = comparison.machines.find(machine => machine.id === comparison.right);
+    const machines = selectedComparisonMachines();
+    if (machines.length < 2) return;
     const rows = [];
     const addRating = (name, id, sub = false) => {
-      const values = [ratingValue(left, id), ratingValue(right, id)];
+      const values = machines.map(machine => ratingValue(machine, id));
       rows.push({ name, values, text: values.map(formatRating), sub, rating: true });
     };
     addRating('総合評価', OVERALL_RATING_ID);
@@ -850,18 +865,20 @@
       criterion.children.filter(child => child.weight !== 0).forEach(child => addRating(child.name, child.id, true));
     });
     const addSpec = (name, values, text) => rows.push({ name, values, text });
-    const machines = [left, right];
+
     addSpec('初当り確率', machines.map(m => m.basic.initialProbability), machines.map(m => formatProbability(m.basic.initialProbability)));
     const payouts = machines.map(initialPayoutExpectation);
     addSpec('初当り出球期待値', payouts.map(p => `${p.kind}:${p.value}`), payouts.map(formatPayoutExpectation));
     addSpec('RUSH突入率', machines.map(m => m.basic.rushEntryRate), machines.map(m => m.basic.rushEntryRate == null ? '—' : `${m.basic.rushEntryRate}%`));
     addSpec('実質RUSH突入率', machines.map(effectiveRush), machines.map(m => formatProbability(effectiveRush(m))));
     addSpec('RUSH継続率', machines.map(m => m.basic.rushContinuationRate), machines.map(m => m.basic.rushContinuationRate == null ? '—' : `${m.basic.rushContinuationRate}%`));
-    const visible = rows.filter(row => !$('#compareDifferencesOnly').checked || row.values[0] !== row.values[1]);
-    $('#comparisonTable').innerHTML = `<thead><tr><th scope="col">項目</th><th scope="col">${escapeHtml(left.name)}</th><th scope="col">${escapeHtml(right.name)}</th></tr></thead><tbody>${visible.map(row => {
-      const different = row.values[0] !== row.values[1];
+    const visible = rows.filter(row => !$('#compareDifferencesOnly').checked || row.values.some(value => value !== row.values[0]));
+    $('#comparisonTable').style.setProperty('--comparison-columns', machines.length);
+    $('#comparisonTable').innerHTML = `<thead><tr><th scope="col">項目</th><th scope="col">${machines.map(machine => escapeHtml(machine.name)).join('</th><th scope="col">')}</th></tr></thead><tbody>${visible.map(row => {
+      const different = row.values.some(value => value !== row.values[0]);
       return `<tr class="${different ? 'comparison-different' : ''} ${row.sub ? 'comparison-sub' : ''}"><th scope="row">${escapeHtml(row.name)}</th>${row.text.map((value, i) => {
-        const higher = row.rating && row.values[i] !== null && row.values[1-i] !== null && row.values[i] > row.values[1-i];
+        const scored = row.values.filter(value => value !== null);
+        const higher = row.rating && scored.length > 1 && Math.min(...scored) < Math.max(...scored) && row.values[i] === Math.max(...scored);
         return `<td${higher ? ' class="comparison-higher"' : ''}>${escapeHtml(value)}</td>`;
       }).join('')}</tr>`;
     }).join('')}</tbody>`;
@@ -1643,22 +1660,19 @@
   });
 
   $$('.view-tab').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
-  $('#rankingList').addEventListener('click', event => {
-    const button = event.target.closest('[data-compare-tie]');
-    if (button) openTieComparison(button.dataset.compareTie);
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(entries => {
+      document.documentElement.style.setProperty('--app-header-height', `${entries[0].target.getBoundingClientRect().height}px`);
+    }).observe($('.app-header'));
+  }
+
+  $('#compareSelectButton').addEventListener('click', () => {
+    state.compareSelecting = !state.compareSelecting;
+    render();
   });
-  ['compareLeft', 'compareRight'].forEach(id => $('#' + id).addEventListener('change', event => {
-    const comparison = state.comparison;
-    if (!comparison) return;
-    const side = id === 'compareLeft' ? 'left' : 'right';
-    const other = side === 'left' ? 'right' : 'left';
-    const previous = comparison[side];
-    comparison[side] = event.target.value;
-    if (comparison[side] === comparison[other]) comparison[other] = previous;
-    $('#compareLeft').value = comparison.left;
-    $('#compareRight').value = comparison.right;
-    renderComparison();
-  }));
+  $('#clearComparisonButton').addEventListener('click', () => { state.comparisonIds = []; updateComparisonSelection(); });
+  $('#openComparisonButton').addEventListener('click', openSelectedComparison);
+
   $('#compareDifferencesOnly').addEventListener('change', renderComparison);
 
   $('#rankingCriterionTabs').addEventListener('click', event => {
@@ -1673,7 +1687,8 @@
     const card = event.target.closest('[data-machine-id]');
     if (!card) return;
     const id = card.dataset.machineId;
-    if (event.target.closest('.card-evaluation')) openRatingEditor(id);
+    if (state.compareSelecting) toggleComparisonMachine(id);
+    else if (event.target.closest('.card-evaluation')) openRatingEditor(id);
     else openDetail(id);
   });
   el.grid.addEventListener('keydown', event => {
@@ -1681,7 +1696,8 @@
     const card = event.target.closest('[data-machine-id]');
     if (!card) return;
     event.preventDefault();
-    if (event.target.closest('.card-evaluation')) openRatingEditor(card.dataset.machineId);
+    if (state.compareSelecting) toggleComparisonMachine(card.dataset.machineId);
+    else if (event.target.closest('.card-evaluation')) openRatingEditor(card.dataset.machineId);
     else if (event.target === card) openDetail(card.dataset.machineId);
   });
   el.detailContent.addEventListener('click', event => {

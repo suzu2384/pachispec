@@ -61,9 +61,12 @@
   <main>
     <section id="libraryView">
     <div class="result-row">
-      <p id="resultSummary">0件を表示</p>
+      <p id="resultSummary">0件を表示</p><button id="compareSelectButton" class="button button-ghost" type="button" aria-pressed="false">選んで比較</button>
     </div>
 
+    <div id="comparisonSelectionBar" class="comparison-selection-bar" hidden>
+      <span id="comparisonSelectionCount" role="status">0機種を選択</span><button id="clearComparisonButton" class="button button-ghost" type="button">解除</button><button id="openComparisonButton" class="button button-primary" type="button" disabled>比較する</button>
+    </div>
     <section id="machineGrid" class="machine-grid" aria-live="polite"></section>
 
     <section id="emptyState" class="empty-state" hidden>
@@ -90,13 +93,13 @@
 
 
   <dialog id="comparisonDialog" class="dialog comparison-dialog" aria-labelledby="comparisonTitle">
-    <div class="dialog-heading"><div><span class="eyebrow">機種を比較</span><h2 id="comparisonTitle">同率比較</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button></div>
+    <div class="dialog-heading"><div><span class="eyebrow">機種を比較</span><h2 id="comparisonTitle">機種を比較</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="閉じる">×</button></div>
     <div class="comparison-content">
       <p id="comparisonSummary" class="comparison-summary"></p>
-      <div class="comparison-selects"><label class="field"><span>機種A</span><select id="compareLeft"></select></label><label class="field"><span>機種B</span><select id="compareRight"></select></label></div>
+
       <label class="comparison-filter"><input id="compareDifferencesOnly" type="checkbox">差がある項目だけ表示</label>
-      <p class="comparison-help">差のある行に背景色を付け、評価点が高い方を金色で表示します。</p>
-      <table id="comparisonTable" class="comparison-table"></table>
+      <p class="comparison-help">差のある行に背景色を付け、評価点が最も高い機種を金色で表示します。点数の差は丸め前の値で判定します。</p>
+      <div class="comparison-table-scroll" tabindex="0" role="region" aria-label="機種の比較表・横スクロール可能"><table id="comparisonTable" class="comparison-table"></table></div>
       <p id="comparisonEmpty" class="comparison-summary" hidden>比較項目に差はありません。</p>
     </div>
   </dialog>
