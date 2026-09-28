@@ -917,6 +917,7 @@
   function switchView(view) {
     state.view = view === 'ranking' ? 'ranking' : 'library';
     $('#libraryView').hidden = state.view !== 'library';
+    $('#listActions').hidden = state.view !== 'library';
     $('#rankingView').hidden = state.view !== 'ranking';
     $$('.view-tab').forEach(button => {
       const active = button.dataset.view === state.view;

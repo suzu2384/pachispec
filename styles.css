@@ -565,7 +565,7 @@ textarea { resize: vertical; }
 }
 
 /* Compact count and comparison controls immediately below the header. */
-.app-header + main { padding-top: 8px; }
+main { padding-top: 8px; }
 .result-row { justify-content: flex-start; flex-wrap: wrap; gap: 8px 12px; margin: 0 2px 8px; min-height: 36px; font-size: .82rem; }
 .result-row > p, #comparisonSelectionCount { white-space: nowrap; }
 #comparisonSelectionCount { padding-left: 12px; border-left: 1px solid var(--line); }
@@ -597,16 +597,18 @@ textarea { resize: vertical; }
  #specWizardButton { white-space: normal; font-size: .78rem; }
 }
 
-/* List actions remain visible; the enclosing list is hidden in ranking view. */
+/* Full-width list actions sit directly below the header, without a sticky gap. */
 .result-row {
   position: sticky;
   top: var(--results-top, 0px);
   z-index: 9;
-  padding-top: 6px;
-  padding-bottom: 6px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
-  box-shadow: 0 5px 10px rgba(0, 0, 0, .18);
+  --actions-gutter: max(clamp(20px, 4vw, 64px), calc((100% - 1780px) / 2 + clamp(20px, 4vw, 64px)));
+  width: 100%;
+  margin: 0;
+  padding: 6px var(--actions-gutter);
+  background: rgba(10, 15, 27, .9);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
 }
 #openComparisonButton:not(:disabled) {
   color: var(--accent-text);
@@ -617,3 +619,8 @@ textarea { resize: vertical; }
 }
 #openComparisonButton:not(:disabled):hover { background: var(--accent-strong); }
 .result-row .button { white-space: nowrap; }
+
+.result-row[hidden] { display: none; }
+@media (max-width: 760px) {
+  .result-row { padding-right: calc(var(--actions-gutter) + 48px); }
+}
