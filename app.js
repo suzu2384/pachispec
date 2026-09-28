@@ -251,11 +251,11 @@
   function normalizeMachine(machine) {
     const tags = Array.isArray(machine.tags) ? machine.tags.filter(item => typeof item === 'string' && item.trim()) : [];
     if (machine.manufacturer && !tags.some(tag => tagMatchesCategory(tag, 'メーカー'))) tags.push(`メーカー：${machine.manufacturer}`);
-    if (machine.type && !tags.some(tag => tagMatchesCategory(tag, 'P/e'))) tags.push(`P/e：${machine.type === 'e' ? 'e機' : 'P機'}`);
+    if (machine.type && !tags.some(tag => tagMatchesCategory(tag, 'P/e') || tagMatchesCategory(tag, '機種'))) tags.push(`機種：${machine.type === 'e' ? 'e機' : 'P機'}`);
     if (machine.lt && !tags.some(tag => splitTag(tag).item === 'LT')) tags.push('仕様：LT');
     const uniqueTags = [...new Set(tags)];
     const manufacturer = tagValue(uniqueTags, 'メーカー') || machine.manufacturer || '';
-    const typeValue = tagValue(uniqueTags, 'P/e');
+    const typeValue = (tagValue(uniqueTags, '機種') || tagValue(uniqueTags, 'P/e'));
     const type = /^e/i.test(typeValue) ? 'e' : (machine.type === 'e' ? 'e' : 'P');
     const lt = uniqueTags.some(tag => splitTag(tag).item.toLocaleUpperCase('ja') === 'LT');
     return {
@@ -497,6 +497,7 @@
 
   function initialPayoutExpectation(machine) {
     const saved = normalizePayoutExpectation(machine.initialPayoutExpectation);
+    if (machine.specEvidence && saved.kind === 'unavailable') return { ...saved, value: null };
     if (machine.specEvidence && saved.kind === 'auto') return PachiSpecModel.initialExpectation((machine.distributions?.special1 || []).map(row => ({ ...row, rate: parseSpecNumber(row.rate) })));
     if (saved.kind !== 'auto' && saved.kind !== 'unavailable' && saved.value !== null) return saved;
     const calculated = calculatedPayoutExpectation(machine);
@@ -601,7 +602,7 @@
       .sort((a, b) => a.payout - b.payout);
     const analysis = rushPayoutAnalysis(machine);
     const quality = analysis.legacy ? '旧方式の参考値' : analysis.approximate ? '概算' : '入力条件で算出';
-    return `<div class="payout-summary"><div class="payout-summary-head"><span>主なRUSH出球分布</span><small>${quality}・12,000個以上を集約</small></div><div class="payout-summary-grid">${items.map(item => `<div><span>${formatDistributionPayout(item)}</span><strong>${item.probability.toFixed(1)}%</strong></div>`).join('')}</div></div>`;
+    return `<div class="payout-summary"><div class="payout-summary-head"><span>RUSH出球分布</span><small>${quality}・12,000個以上を集約</small></div><div class="payout-summary-grid">${items.map(item => `<div><span>${formatDistributionPayout(item)}</span><strong>${item.probability.toFixed(1)}%</strong></div>`).join('')}</div></div>`;
   }
 
   function payoutDistributionDetailTemplate(machine) {
@@ -855,6 +856,7 @@
     const machines = selectedComparisonMachines();
     $('#comparisonSelectionCount').textContent = `${machines.length}件選択`;
     $('#openComparisonButton').disabled = machines.length < 2;
+    $('#clearComparisonButton').disabled = machines.length === 0;
     $$('[data-machine-id]', el.grid).forEach(card => {
       const selected = state.comparisonIds.includes(card.dataset.machineId);
       card.classList.toggle('comparison-selected', selected);
@@ -1115,7 +1117,7 @@
       id: existingId || crypto.randomUUID(),
       name: $('#nameInput').value.trim(),
       manufacturer: tagValue(state.editorTags, 'メーカー'),
-      type: /^e/i.test(tagValue(state.editorTags, 'P/e')) ? 'e' : 'P',
+      type: /^e/i.test((tagValue(state.editorTags, '機種') || tagValue(state.editorTags, 'P/e'))) ? 'e' : 'P',
       introductionDate: $('#introductionDateInput').value,
       series: $('#seriesInput').value.trim(),
       tags: [...state.editorTags],
@@ -1189,7 +1191,7 @@
 
   function syncMachineTagMetadata(machine) {
     machine.manufacturer = tagValue(machine.tags, 'メーカー');
-    machine.type = /^e/i.test(tagValue(machine.tags, 'P/e')) ? 'e' : 'P';
+    machine.type = /^e/i.test((tagValue(machine.tags, '機種') || tagValue(machine.tags, 'P/e'))) ? 'e' : 'P';
     machine.lt = machine.tags.some(tag => splitTag(tag).item.toLocaleUpperCase('ja') === 'LT');
   }
 
@@ -1618,6 +1620,13 @@
     $('#ratingFilterMin').disabled = disabled; $('#ratingFilterMax').disabled = disabled;
     $('#ratingFilterMax').setCustomValidity('');
   }
+  function updateResultsOffset() {
+    const header = $('.app-header');
+    const offset = getComputedStyle(header).position === 'sticky' ? header.getBoundingClientRect().height : 0;
+    document.documentElement.style.setProperty('--results-top', `${offset}px`);
+  }
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(updateResultsOffset).observe($('.app-header'));
+  window.addEventListener('resize', updateResultsOffset);
   const mobileHeaderQuery = window.matchMedia?.('(max-width: 760px)');
   function updateHeaderCollapse() {
     const collapsed = Boolean(mobileHeaderQuery?.matches && state.headerCollapsed);
@@ -1627,6 +1636,7 @@
     button.setAttribute('aria-label', collapsed ? 'ヘッダーの操作を表示する' : 'ヘッダーの操作を折りたたむ');
     button.title = collapsed ? '操作を表示' : '操作を折りたたむ';
     if (collapsed) $('.data-menu').open = false;
+    updateResultsOffset();
   }
   $('#headerToggleButton').addEventListener('click', () => {
     state.headerCollapsed = !state.headerCollapsed;
@@ -1720,6 +1730,10 @@
 
   $$('.view-tab').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
   $('#openComparisonButton').addEventListener('click', openSelectedComparison);
+  $('#clearComparisonButton').addEventListener('click', () => {
+    state.comparisonIds = [];
+    updateComparisonSelection();
+  });
 
   $('#compareDifferencesOnly').addEventListener('change', renderComparison);
 

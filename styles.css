@@ -596,3 +596,24 @@ textarea { resize: vertical; }
  .spec-wizard-body input, .spec-wizard-body select { font-size: 16px; }
  #specWizardButton { white-space: normal; font-size: .78rem; }
 }
+
+/* List actions remain visible; the enclosing list is hidden in ranking view. */
+.result-row {
+  position: sticky;
+  top: var(--results-top, 0px);
+  z-index: 9;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, .18);
+}
+#openComparisonButton:not(:disabled) {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(246, 183, 60, .18);
+}
+#openComparisonButton:not(:disabled):hover { background: var(--accent-strong); }
+.result-row .button { white-space: nowrap; }
