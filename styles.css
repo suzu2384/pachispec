@@ -624,3 +624,20 @@ main { padding-top: 8px; }
 @media (max-width: 760px) {
   .result-row { padding-right: calc(var(--actions-gutter) + 48px); }
 }
+
+
+/* AI-powered specification import */
+button:disabled { cursor: not-allowed; opacity: .48; transform: none !important; }
+.ai-spec-dialog { width: min(760px, calc(100% - 28px)); }
+.ai-spec-body { padding: 18px clamp(16px, 3vw, 28px); max-height: min(66vh, 600px); overflow-y: auto; }
+.ai-spec-body > .field { display: block; }
+.ai-spec-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin: 13px 0; }
+.ai-spec-summary-grid > div { display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.ai-spec-summary-grid span { color: var(--muted); font-size: .72rem; }
+.ai-spec-summary-grid strong { overflow-wrap: anywhere; font-size: .9rem; }
+.ai-spec-warnings p { margin: 5px 0; font-size: .78rem; color: var(--accent-strong); }
+.ai-spec-sources { padding-left: 22px; font-size: .82rem; overflow-wrap: anywhere; }
+.ai-spec-sources a { color: var(--teal); }
+.ai-spec-google-search { max-width: 100%; overflow-x: auto; }
+.ai-spec-body h3 { margin: 12px 0 5px; font-size: .87rem; }
+@media (max-width: 500px) { .ai-spec-summary-grid { grid-template-columns: 1fr 1fr; } }

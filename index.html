@@ -12,13 +12,13 @@
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=2" sizes="180x180">
   <link rel="manifest" href="site.webmanifest">
   <meta name="apple-mobile-web-app-title" content="ぱちんこスペック">
-  <link rel="stylesheet" href="styles.css?v=108680a61bfd">
+  <link rel="stylesheet" href="styles.css?v=1.0.0">
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
       <h1><img class="brand-logo" src="assets/logo.svg" alt="ぱちんこスペックライブラリ" width="1080" height="395"></h1>
-      <p class="brand-count"><span id="machineCount">0</span>機種</p>
+      <p class="brand-count"><span id="machineCount">0</span>機種 · v1.0.0</p>
     </div>
     <nav class="view-tabs" aria-label="表示切り替え">
       <button class="view-tab active" type="button" data-view="library" aria-pressed="true"><span class="view-label-desktop">機種一覧</span><span class="view-label-mobile">一覧</span></button>
@@ -133,14 +133,6 @@
     </form>
   </dialog>
 
-  <dialog id="specWizardDialog" class="dialog spec-wizard-dialog" aria-labelledby="specWizardTitle">
-    <form id="specWizardForm">
-      <div class="dialog-heading"><div><h2 id="specWizardTitle">ページを見ながらスペック入力</h2><p id="specWizardStep" aria-live="polite"></p></div><button class="icon-button" id="specWizardSaveDraft" type="button" aria-label="途中の入力を編集画面に反映して閉じる">×</button></div>
-      <div id="specWizardBody" class="spec-wizard-body"></div>
-      <div class="dialog-actions"><button class="button button-ghost" type="button" id="specWizardCancel">変更を破棄</button><span class="action-spacer"></span><button class="button button-ghost" type="button" id="specWizardBack">戻る</button><button class="button button-primary" type="submit" id="specWizardNext">次へ</button></div>
-    </form>
-  </dialog>
-
   <dialog id="editorDialog" class="dialog editor-dialog">
     <form id="editorForm" method="dialog">
       <div class="dialog-heading">
@@ -167,7 +159,7 @@
         </section>
 
         <section class="form-section">
-          <div class="section-heading"><h3>主要スペック</h3><button class="button button-primary" type="button" id="specWizardButton">質問に答えてスペックを入力</button></div><p class="section-note">公式・P-WORLD等の記載を見ながら入力できます。不明な条件はそのまま保存できます。</p>
+          <div class="section-heading"><h3>主要スペック</h3><button class="button button-primary" type="button" id="aiSpecButton">AIで入力</button></div><p class="section-note" id="aiSpecAvailability">公開スペックをAIで調べ、確認後に反映します。</p>
           <div class="form-grid four-columns">
             <label class="field"><span>通常時 1/</span><input id="initialProbabilityInput" type="number" min="0" step="any" placeholder="319.7"></label>
             <label class="field"><span>RUSH突入率 %</span><input id="rushEntryRateInput" type="number" min="0" max="100" step="any" placeholder="50"></label>
@@ -200,13 +192,13 @@
 
         <section class="form-section">
           <div class="section-heading"><h3>特図2 振り分け</h3><button class="small-button" type="button" data-add-row="special2">＋ 行を追加</button></div>
-          <p class="section-note">質問形式で設定した機種はモード別の条件で計算します。この表は表示用です。モード条件の変更は「質問に答えてスペックを入力」から行ってください。</p>
+          <p class="section-note">公開情報で確認できた振り分けを登録します。モード別の出球条件が登録されている場合はそちらを計算に使用します。</p>
           <div id="special2Rows" class="repeater"></div>
         </section>
 
         <section class="form-section">
           <div class="section-heading"><h3>状態遷移</h3><button class="small-button" type="button" data-add-row="flows">＋ 遷移を追加</button></div>
-          <p class="section-note">表示用のメモです。計算に使う移行先は質問形式で設定します。</p>
+          <p class="section-note">通常時、RUSH、LTなどの移行を記録します。複雑な条件の出球分布は確認できる情報が揃った場合のみ算出します。</p>
           <div id="flowRows" class="repeater"></div>
         </section>
 
@@ -234,6 +226,31 @@
         <button class="button button-primary" type="submit">保存</button>
       </div>
     </form>
+  </dialog>
+
+
+  <dialog id="aiSpecDialog" class="dialog ai-spec-dialog" aria-labelledby="aiSpecTitle">
+    <div class="dialog-heading">
+      <div><span class="eyebrow">公開スペック調査</span><h2 id="aiSpecTitle">AIで入力</h2></div>
+      <button class="icon-button" id="aiSpecCloseButton" type="button" aria-label="閉じる">×</button>
+    </div>
+    <div class="ai-spec-body">
+      <label class="field"><span>参考ページURL（任意）</span><input id="aiSpecReference" type="url" placeholder="https://"></label>
+      <p class="section-note" id="aiSpecStatus" role="status" aria-live="polite">公開情報を調査します。</p>
+      <div id="aiSpecPreview" hidden>
+        <div id="aiSpecSummary" aria-label="調査したスペックの概要"></div>
+        <div id="aiSpecWarnings" class="ai-spec-warnings"></div>
+        <h3>出典</h3>
+        <ul id="aiSpecSources" class="ai-spec-sources"></ul>
+        <div id="aiSpecGoogleSearch" class="ai-spec-google-search"></div>
+        <p class="section-note">AIの検索結果は誤る場合があります。機種と数値を確認してから反映してください。未確認項目は自動補完しません。</p>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="button button-ghost" id="aiSpecSearchButton" type="button">検索する</button>
+      <span class="action-spacer"></span>
+      <button class="button button-primary" id="aiSpecApplyButton" type="button" disabled>編集画面に反映</button>
+    </div>
   </dialog>
 
   <dialog id="criteriaDialog" class="dialog tag-dialog" aria-labelledby="ratingToolsTitle">
@@ -309,8 +326,9 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="spec-model.js?v=7ee62daf81a7"></script>
-  <script src="spec-wizard.js?v=f0b56942c023"></script>
-  <script src="app.js?v=05ae13357bfa"></script>
+  <script src="spec-model.js?v=1.0.0"></script>
+  <script src="ai-config.js?v=1.0.0"></script>
+  <script src="ai-spec.js?v=1.0.0"></script>
+  <script src="app.js?v=1.0.0"></script>
 </body>
 </html>

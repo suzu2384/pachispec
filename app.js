@@ -456,10 +456,9 @@
   }
 
   function effectiveRush(machine) {
-    if (machine.specEvidence && machine.specEvidence.entryBasisConfirmed !== true) return null;
     const probability = numberOrNull(machine.basic.initialProbability);
     const entryRate = numberOrNull(machine.basic.rushEntryRate);
-    if (!probability || !entryRate || entryRate <= 0) return null;
+    if (!(probability > 0) || !(entryRate > 0 && entryRate <= 100)) return null;
     return probability / (entryRate / 100);
   }
 
@@ -943,7 +942,7 @@
       <div class="detail-metrics">
         ${detailMetric('初当り', formatProbability(machine.basic.initialProbability))}
         ${detailMetric('RUSH突入率', machine.basic.rushEntryRate != null ? `${machine.basic.rushEntryRate}%` : '—')}
-        ${detailMetric('実質RUSH突入', formatProbability(rush), true)}
+        ${detailMetric('実質RUSH突入', formatProbability(rush), true, rush !== null && machine.specEvidence && !machine.specEvidence.entryBasisConfirmed ? '初当り確率と突入率の対象が同じか未確認です。' : '')}
         ${detailMetric('初当り出球期待値', formatPayoutExpectation(initialPayoutExpectation(machine)), true, initialPayoutExpectation(machine).note)}
         ${detailMetric('RUSH中当り', formatProbability(machine.basic.rushHitProbability))}
         ${detailMetric('RUSH継続率', machine.basic.rushContinuationRate != null ? `${machine.basic.rushContinuationRate}%` : '—')}
@@ -1006,7 +1005,7 @@
     updateRushPreview();
     updateInitialPayoutPreview();
     el.editorDialog.showModal();
-    if (!machine) openSpecWizard();
+    // New machines remain in the normal editor; AI lookup is optional.
   }
 
   function openRatingEditor(id) {
@@ -1144,33 +1143,151 @@
     });
   }
 
-  function openSpecWizard() {
-    const current = readMachineFromForm();
-    PachiSpecWizard.open(current, machine => {
-      state.editorRushModel = machine.rushPayoutModel;
-      state.editorSpecEvidence = machine.specEvidence;
-      $('#nameInput').value = machine.name;
-      $('#introductionDateInput').value = machine.introductionDate || '';
-      $('#initialProbabilityInput').value = machine.basic.initialProbability ?? '';
-      $('#rushEntryRateInput').value = machine.basic.rushEntryRate ?? '';
-      const entries = machine.rushPayoutModel.entries || [];
-      const first = entries.length === 1 ? machine.rushPayoutModel.states.find(mode => mode.id === entries[0].stateId) : null;
-      $('#rushHitProbabilityInput').value = first?.hitProbability ?? '';
-      $('#rushHitTypeInput').value = ['実質当り確率','図柄揃い確率','大当り確率','普図抽選確率','確変中確率'].includes(first?.drawType) ? first.drawType : 'その他';
-      $('#rushHitNoteInput').value = first ? `開始モード：${first.name}。モード別条件を参照。` : 'モード別条件を参照。';
-      $('#rushContinuationRateInput').value = first?.method === 'rate' ? first.continuationRate ?? '' : '';
-      $('#initialPayoutKindInput').value = machine.initialPayoutExpectation.kind;
-      $('#initialPayoutValueInput').value = machine.initialPayoutExpectation.value ?? '';
-      $('#initialPayoutNoteInput').value = machine.initialPayoutExpectation.note;
-      renderRepeater('special1', machine.distributions.special1);
-      renderRepeater('special2', machine.distributions.special2);
-      renderRepeater('flows', machine.flows);
-      updateRushPreview(); updateInitialPayoutPreview();
-      showToast('入力内容を反映しました。機種編集を保存すると確定します');
-    });
-  }
-  $('#specWizardButton').addEventListener('click', openSpecWizard);
 
+  // Optional, source-grounded AI import. Never write unreviewed output to storage.
+  const aiConfig = globalThis.PACHISPEC_AI_CONFIG || {};
+  const aiAvailable = globalThis.PachiSpecAI?.available(aiConfig, location.protocol) === true;
+  const aiClient = aiAvailable ? globalThis.PachiSpecAI.makeClient(aiConfig) : null;
+  let aiResearch = null, aiBusy = false, aiRequestSerial = 0;
+  const aiButton = $('#aiSpecButton');
+  aiButton.disabled = !aiAvailable;
+  aiButton.title = location.protocol === 'file:' ? 'ローカルファイルではAIを利用できません' :
+    aiAvailable ? '公開スペックをAIで検索します' : 'FirebaseとApp Checkの設定後に利用できます';
+  $('#aiSpecAvailability').textContent = location.protocol === 'file:' ?
+    'ローカルファイルではAI入力は使えません。手入力は利用できます。' :
+    aiAvailable ? '公開情報をAIで調べ、確認後に編集画面へ反映します。' :
+    'AIは未設定です。GitHubの変数設定後に利用できます。';
+
+  function renderAIResearch(result) {
+    const spec = result.spec;
+    const f = value => value == null ? '未確認' : String(value);
+    const row = (label, value) => '<div><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(f(value)) + '</strong></div>';
+    const b = spec.basic;
+    $('#aiSpecSummary').innerHTML =
+      '<div class="ai-spec-summary-grid">' +
+      row('検索された機種', spec.researchedName || '未確認') +
+      row('初当り', b.initialProbability ? '1/' + b.initialProbability : null) +
+      row('RUSH突入率', b.rushEntryRate === null ? null : b.rushEntryRate + '%') +
+      row('実質RUSH突入', b.initialProbability > 0 && b.rushEntryRate > 0 ? '約1/' + (b.initialProbability / (b.rushEntryRate / 100)).toFixed(1) : null) +
+      row('RUSH継続率', b.rushContinuationRate === null ? null : b.rushContinuationRate + '%') +
+      row('RUSH中当り', b.rushHitProbability ? '1/' + b.rushHitProbability : null) +
+      row('特図1 / 特図2', spec.distributions.special1.length + ' / ' + spec.distributions.special2.length + ' 件') +
+      row('状態遷移 / その他', spec.flows.length + ' / ' + spec.customSpecs.length + ' 件') +
+      row('RUSH出球モデル', spec.rushPayoutModel ? '計算条件を取得' : '条件不足') +
+      '</div>';
+    $('#aiSpecWarnings').innerHTML = result.warnings.map(w => '<p>' + escapeHtml(w) + '</p>').join('');
+    $('#aiSpecSources').innerHTML = result.sources.map(source => '<li><a href="' + escapeHtml(source.url) +
+      '" target="_blank" rel="noopener noreferrer">' + escapeHtml(source.title) + '</a></li>').join('');
+    // Google Search terms require rendering the provider-supplied search entry point.
+    const searchHtml = result.grounding?.searchEntryPoint?.renderedContent;
+    $('#aiSpecGoogleSearch').innerHTML = typeof searchHtml === 'string' ? searchHtml : '';
+    $('#aiSpecPreview').hidden = false;
+    $('#aiSpecApplyButton').disabled = false;
+  }
+
+  async function generateAISpec() {
+    if(!aiClient || aiBusy) return;
+    const name = $('#nameInput').value.trim();
+    if(!name){ showToast('先に機種名を入力してください'); $('#nameInput').focus(); return; }
+    const reference = $('#aiSpecReference').value.trim();
+    aiBusy = true;
+    const serial = ++aiRequestSerial;
+    aiResearch = null;
+    $('#aiSpecPreview').hidden = true;
+    $('#aiSpecApplyButton').disabled = true;
+    $('#aiSpecSearchButton').disabled = true;
+    $('#aiSpecStatus').textContent = '公開スペックを検索しています…';
+    try{
+      const response = await aiClient.research(name,reference);
+      if(serial !== aiRequestSerial) return;
+      aiResearch = response;
+      renderAIResearch(response);
+      $('#aiSpecStatus').textContent = '検索結果を確認し、問題なければ編集画面に反映してください。';
+    }catch(error){
+      if(serial !== aiRequestSerial) return;
+      $('#aiSpecStatus').textContent = error?.message || 'AI検索に失敗しました。';
+    }finally{
+      if(serial === aiRequestSerial){
+        aiBusy = false;
+        $('#aiSpecSearchButton').disabled = false;
+      }
+    }
+  }
+
+  function applyAISpec() {
+    if(!aiResearch || aiBusy) return;
+    const spec = aiResearch.spec;
+    const set = (id,value) => {if(value !== null && value !== undefined && value !== '') $(id).value = value;};
+    // Keep the user-supplied machine name, existing personal scores, and memo intact.
+    set('#introductionDateInput', spec.introductionDate);
+    set('#seriesInput', spec.series);
+    set('#initialProbabilityInput', spec.basic.initialProbability);
+    set('#rushEntryRateInput', spec.basic.rushEntryRate);
+    set('#rushContinuationRateInput', spec.basic.rushContinuationRate);
+    set('#rushHitProbabilityInput', spec.basic.rushHitProbability);
+    set('#rushHitTypeInput', spec.basic.rushHitType);
+    set('#rushHitNoteInput', spec.basic.rushHitNote);
+    if(spec.manufacturer){
+      state.editorTags = state.editorTags.filter(t => !tagMatchesCategory(t,'メーカー'));
+      state.editorTags.push('メーカー：' + spec.manufacturer);
+    }
+    if(spec.type){
+      state.editorTags = state.editorTags.filter(t => !tagMatchesCategory(t,'機種') && !tagMatchesCategory(t,'P/e'));
+      state.editorTags.push('機種：' + spec.type + '機');
+    }
+    if(spec.lt === true && !state.editorTags.includes('仕様：LT'))state.editorTags.push('仕様：LT');
+    if(spec.lt === false)state.editorTags = state.editorTags.filter(t => t !== '仕様：LT');
+    state.editorTags = [...new Set(state.editorTags)];
+    renderEditorTags();
+    for(const kind of ['special1','special2']){
+      if(spec.distributions[kind].length)renderRepeater(kind,spec.distributions[kind]);
+    }
+    if(spec.flows.length)renderRepeater('flows',spec.flows);
+    if(spec.customSpecs.length)renderRepeater('customSpecs',spec.customSpecs);
+    if(spec.rushPayoutModel)state.editorRushModel = spec.rushPayoutModel;
+    const extraSources = aiResearch.sources.map(s => s.url).slice(0,4).join('\n');
+    state.editorSpecEvidence = {
+      ...spec.specEvidence,
+      note: [spec.specEvidence.note, 'AI調査の検索出典:', extraSources].filter(Boolean).join('\n').slice(0,1800)
+    };
+    const expectation = spec.initialPayoutExpectation;
+    if(expectation.kind !== 'auto' && expectation.value !== null){
+      $('#initialPayoutKindInput').value = expectation.kind;
+      $('#initialPayoutValueInput').value = expectation.value;
+      $('#initialPayoutNoteInput').value = expectation.note;
+    }else if(spec.distributions.special1.length){
+      $('#initialPayoutKindInput').value = 'auto';
+      $('#initialPayoutValueInput').value = '';
+      $('#initialPayoutNoteInput').value = expectation.note;
+    }
+    updateRushPreview(); updateInitialPayoutPreview();
+    ++aiRequestSerial;
+    aiResearch = null;
+    closeDialog($('#aiSpecDialog'));
+    showToast('AIの結果を編集画面に反映しました。保存すると確定します');
+  }
+
+  aiButton.addEventListener('click', () => {
+    if(!aiAvailable) return;
+    if(!$('#nameInput').value.trim()){
+      showToast('先に機種名を入力してください');
+      $('#nameInput').focus();return;
+    }
+    ++aiRequestSerial;
+    aiResearch = null;
+    $('#aiSpecReference').value = state.editorSpecEvidence?.sourceUrl || '';
+    $('#aiSpecPreview').hidden = true;
+    $('#aiSpecApplyButton').disabled = true;
+    $('#aiSpecStatus').textContent = '機種名から公開スペックを調べます。';
+    $('#aiSpecDialog').showModal();
+  });
+  $('#aiSpecSearchButton').addEventListener('click', generateAISpec);
+  $('#aiSpecApplyButton').addEventListener('click', applyAISpec);
+  $('#aiSpecCloseButton').addEventListener('click', () => {
+    ++aiRequestSerial;
+    aiResearch = null;
+    closeDialog($('#aiSpecDialog'));
+  });
   function updateRushPreview() {
     const machine = { basic: { initialProbability: $('#initialProbabilityInput').value, rushEntryRate: $('#rushEntryRateInput').value }, specEvidence: state.editorSpecEvidence };
     $('#rushProbabilityPreview').textContent = formatProbability(effectiveRush(machine));
