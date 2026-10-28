@@ -6,7 +6,7 @@ import os
 import re
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
-MODELS={"gemini-3.5-flash-lite","gemini-3.1-flash-lite","gemini-3.8-flash"}
+MODELS={"gemini-3.5-flash-lite","gemini-3.1-flash-lite","gemini-3.8-flash","gemini-2.5-flash-lite","gemini-2.5-flash"}
 def sync(root=ROOT,env=None):
  env=os.environ if env is None else env
  raw=env.get("PACHISPEC_AI_FIREBASE_CONFIG","").strip()

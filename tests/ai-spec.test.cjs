@@ -41,3 +41,12 @@ test('no confirmation flag stops effectiveRush calculation',()=>{
  assert.ok(calc.includes('probability / (entryRate / 100)'));
  assert.ok(!calc.includes('entryBasisConfirmed'));
 });
+
+test('Gemini 2.5 Flash and Flash-Lite can be selected via public config',()=>{
+ for(const model of ['gemini-2.5-flash-lite','gemini-2.5-flash']){
+  assert.equal(ai.isConfigured({...config,model}),true);
+  assert.equal(ai.available({...config,model},'https:'),true);
+  assert.equal(ai.available({...config,model},'file:'),false);
+ }
+ assert.equal(ai.isConfigured({...config,model:'gemini-unsupported'}),false);
+});

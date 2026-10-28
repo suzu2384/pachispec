@@ -30,6 +30,7 @@ jobs:
           node --check ai-spec.js
           node --check app.js
           node --test tests/*.test.cjs
+          python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Generate public AI configuration
         run: python3 tools/sync-ai-config.py
       - name: Commit configuration when changed

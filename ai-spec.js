@@ -1,7 +1,7 @@
 /* Source-grounded Firebase AI Logic spec lookup. Public Firebase config only. */
 (function(root){
  'use strict';
- const ALLOWED=new Set(['gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3.8-flash']);
+ const ALLOWED=new Set(['gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3.8-flash','gemini-2.5-flash-lite','gemini-2.5-flash']);
  const str=v=>typeof v==='string'?v.trim():'';
  const link=v=>{try{const u=new URL(str(v));return /^https?:$/.test(u.protocol)?u.href:'';}catch{return '';}};
  const num=(v,min=0,max=Infinity)=>{
