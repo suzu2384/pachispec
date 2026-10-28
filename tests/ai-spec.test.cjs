@@ -133,3 +133,91 @@ test('falls back from unavailable 2.5 to 3.5 Flash-Lite only for model 404',asyn
  assert.equal(used.join(','),'gemini-2.5-flash-lite,gemini-3.5-flash-lite');
  assert.ok(result.warnings.some(w=>/2.5は利用できない/.test(w)));
 });
+
+test('multiple URL input is newline separated, validated, deduplicated and capped at 20',()=>{
+ const list='https://example.com/a\n https://example.com/b \nhttps://example.com/a';
+ assert.equal(ai.parseSourceUrls(list).join(','),'https://example.com/a,https://example.com/b');
+ assert.equal(ai.parseSourceUrls('https://example.com/a').length,1);
+ assert.equal(ai.parseSourceUrls('').length,0);
+ assert.throws(()=>ai.parseSourceUrls('https://example.com/a\nnot-a-url'),/参照URL/);
+ assert.equal(ai.parseSourceUrls(Array.from({length:20},(_,i)=>'https://example.com/'+i)).length,20);
+ assert.throws(()=>ai.parseSourceUrls(Array.from({length:21},(_,i)=>'https://example.com/'+i)),/最大20件/);
+});
+test('multi-page extraction identifies machine name without prior entry and shows conflicts',async()=>{
+ const urls=['https://example.com/a','https://example.com/b'];
+ const prompts=[],options=[];
+ const loadSDK=async()=>({
+  app:{initializeApp:()=>({})},
+  check:{ReCaptchaEnterpriseProvider:class{},initializeAppCheck:()=>{}},
+  ai:{GoogleAIBackend:class{},getAI:()=>({}),
+   getGenerativeModel:(svc,opts)=>{
+    options.push(opts);
+    return {generateContent:async p=>{
+     prompts.push(p);
+     return {response:{
+      candidates:[{urlContextMetadata:{urlMetadata:urls.map(url=>({retrievedUrl:url,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_SUCCESS'}))}}],
+      text:()=>JSON.stringify({name:'eテスト 2026',basic:{initialProbability:319.7,rushEntryRate:null},conflicts:['RUSH突入率: URL A 50% / URL B 60%']})
+     }};
+    }};
+   }}
+ });
+ const r=await ai.makeClient(config,{loadSDK}).research('',urls.join('\n'));
+ assert.equal(r.spec.researchedName,'eテスト 2026');
+ assert.equal(r.sources.map(s=>s.url).join(','),urls.join(','));
+ assert.equal(r.spec.specEvidence.sourceUrl,urls[0]);
+ assert.equal(r.spec.basic.rushEntryRate,null);
+ assert.ok(r.warnings.some(s=>s.includes('資料の不一致:')));
+ assert.equal(options[0].tools.length,1);
+ assert.ok('urlContext' in options[0].tools[0]);
+ assert.ok(prompts[0].includes(urls[0])&&prompts[0].includes(urls[1]));
+ assert.ok(prompts[0].includes('機種名は事前入力されていません'));
+});
+test('partial retrieval retries with only successfully fetched URL and reports failures',async()=>{
+ const good='https://example.com/good',bad='https://example.com/bad';
+ const prompts=[];
+ const loadSDK=async()=>({
+  app:{initializeApp:()=>({})},
+  check:{ReCaptchaEnterpriseProvider:class{},initializeAppCheck:()=>{}},
+  ai:{GoogleAIBackend:class{},getAI:()=>({}),
+   getGenerativeModel:()=>({generateContent:async p=>{
+    prompts.push(p);
+    return {response:{
+     candidates:[{urlContextMetadata:{urlMetadata:
+      p.includes(bad)?[
+       {retrievedUrl:good,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_SUCCESS'},
+       {retrievedUrl:bad,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_ERROR'}
+      ]:[{retrievedUrl:good,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_SUCCESS'}]}}],
+     text:()=>JSON.stringify({name:p.includes(bad)?'混在した仮名':'e確認済み',basic:{initialProbability:199.9}})
+    }};
+   }})}
+ });
+ const r=await ai.makeClient(config,{loadSDK}).research('',good+'\n'+bad);
+ assert.equal(prompts.length,2);
+ assert.ok(prompts[0].includes(good)&&prompts[0].includes(bad));
+ assert.ok(prompts[1].includes(good)&&!prompts[1].includes(bad));
+ assert.equal(r.spec.researchedName,'e確認済み');
+ assert.equal(r.sources.map(s=>s.url).join(','),good);
+ assert.ok(r.warnings.some(w=>w.includes(bad)));
+});
+test('without a supplied name, a result that lacks a name cannot be applied',async()=>{
+ const loadSDK=async()=>({
+  app:{initializeApp:()=>({})},
+  check:{ReCaptchaEnterpriseProvider:class{},initializeAppCheck:()=>{}},
+  ai:{GoogleAIBackend:class{},getAI:()=>({}),
+   getGenerativeModel:()=>({generateContent:async()=>({
+    response:{text:()=>JSON.stringify({name:'',basic:{initialProbability:319.7}})}
+   })})}
+ });
+ const client=ai.makeClient(config,{loadSDK});
+ await assert.rejects(client.research('','','初当り1/319.7'),/機種名を確認できません/);
+ const r=await client.research('e手入力','','初当り1/319.7');
+ assert.equal(r.spec.researchedName,'');
+});
+test('AI import opens without a machine name, fills blank name and preserves existing names',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.ok(app.includes("set('#nameInput',spec.researchedName)"));
+ assert.ok(!app.includes("showToast('先に機種名を入力してください')"));
+ const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+ assert.ok(html.includes('<textarea id="aiSpecReference"'));
+ assert.ok(html.includes('v1.0.4'));
+});

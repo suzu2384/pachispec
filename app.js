@@ -1155,7 +1155,7 @@
     aiAvailable ? '指定URLまたは文章からスペックを読み取ります' : 'FirebaseとApp Checkの設定後に利用できます';
   $('#aiSpecAvailability').textContent = location.protocol === 'file:' ?
     'ローカルファイルではAI入力は使えません。手入力は利用できます。' :
-    aiAvailable ? 'URLまたは貼り付け文章をAIで整理し、確認後に反映します。' :
+    aiAvailable ? '複数URLまたは貼り付け文章から機種名とスペックを読み取り、確認後に反映します。' :
     'AIは未設定です。GitHubの変数設定後に利用できます。';
 
   function renderAIResearch(result) {
@@ -1175,7 +1175,11 @@
       row('状態遷移 / その他', spec.flows.length + ' / ' + spec.customSpecs.length + ' 件') +
       row('RUSH出球モデル', spec.rushPayoutModel ? '計算条件を取得' : '条件不足') +
       '</div>';
-    $('#aiSpecWarnings').innerHTML = result.warnings.map(w => '<p>' + escapeHtml(w) + '</p>').join('');
+    const currentName = $('#nameInput').value.trim();
+    const warnings = [...result.warnings];
+    if(currentName && spec.researchedName && currentName !== spec.researchedName)
+      warnings.unshift('現在の機種名「' + currentName + '」と取得した機種名「' + spec.researchedName + '」が違います。既存の機種名を優先して保持します。');
+    $('#aiSpecWarnings').innerHTML = warnings.map(w => '<p>' + escapeHtml(w) + '</p>').join('');
     $('#aiSpecSources').innerHTML = result.sources.map(source => '<li><a href="' + escapeHtml(source.url) +
       '" target="_blank" rel="noopener noreferrer">' + escapeHtml(source.title) + '</a></li>').join('');
     if(!result.sources.length)$('#aiSpecSources').innerHTML = '<li>貼り付けたスペック文章（Web照合なし）</li>';
@@ -1186,7 +1190,6 @@
   async function generateAISpec() {
     if(!aiClient || aiBusy) return;
     const name = $('#nameInput').value.trim();
-    if(!name){ showToast('先に機種名を入力してください'); $('#nameInput').focus(); return; }
     const reference = $('#aiSpecReference').value.trim();
     const sourceText = $('#aiSpecPaste').value.trim();
     aiBusy = true;
@@ -1195,7 +1198,7 @@
     $('#aiSpecPreview').hidden = true;
     $('#aiSpecApplyButton').disabled = true;
     $('#aiSpecSearchButton').disabled = true;
-    $('#aiSpecStatus').textContent = 'スペック資料をAIで読み取っています…';
+    $('#aiSpecStatus').textContent = '複数のスペック資料を照合しています…';
     try{
       const response = await aiClient.research(name,reference,sourceText);
       if(serial !== aiRequestSerial) return;
@@ -1217,7 +1220,11 @@
     if(!aiResearch || aiBusy) return;
     const spec = aiResearch.spec;
     const set = (id,value) => {if(value !== null && value !== undefined && value !== '') $(id).value = value;};
-    // Keep the user-supplied machine name, existing personal scores, and memo intact.
+    // Never overwrite an existing machine name, personal ratings, or memo.
+    if(!$('#nameInput').value.trim()){
+      if(!spec.researchedName){showToast('機種名が確認できません。資料を確認してください');return;}
+      set('#nameInput',spec.researchedName);
+    }
     set('#introductionDateInput', spec.introductionDate);
     set('#seriesInput', spec.series);
     set('#initialProbabilityInput', spec.basic.initialProbability);
@@ -1244,7 +1251,7 @@
     if(spec.flows.length)renderRepeater('flows',spec.flows);
     if(spec.customSpecs.length)renderRepeater('customSpecs',spec.customSpecs);
     if(spec.rushPayoutModel)state.editorRushModel = spec.rushPayoutModel;
-    const extraSources = aiResearch.sources.map(s => s.url).slice(0,4).join('\n');
+    const extraSources = aiResearch.sources.map(s => s.url).join('\n');
     state.editorSpecEvidence = {
       ...spec.specEvidence,
       note: [spec.specEvidence.note, aiResearch.sourceMode==='url'?'AI読み取りの指定URL:':'AI読み取り元: 貼り付け資料（Web照合なし）', extraSources].filter(Boolean).join('\n').slice(0,1800)
@@ -1268,17 +1275,13 @@
 
   aiButton.addEventListener('click', () => {
     if(!aiAvailable) return;
-    if(!$('#nameInput').value.trim()){
-      showToast('先に機種名を入力してください');
-      $('#nameInput').focus();return;
-    }
     ++aiRequestSerial;
     aiResearch = null;
     $('#aiSpecReference').value = state.editorSpecEvidence?.sourceUrl || '';
     $('#aiSpecPreview').hidden = true;
     $('#aiSpecApplyButton').disabled = true;
     $('#aiSpecPaste').value = '';
-    $('#aiSpecStatus').textContent = 'URLまたはスペック文章を入力してください。';
+    $('#aiSpecStatus').textContent = '複数のURLまたはスペック文章を入力してください。機種名は自動取得します。';
     $('#aiSpecDialog').showModal();
   });
   $('#aiSpecSearchButton').addEventListener('click', generateAISpec);

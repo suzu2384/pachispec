@@ -12,13 +12,13 @@
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=2" sizes="180x180">
   <link rel="manifest" href="site.webmanifest">
   <meta name="apple-mobile-web-app-title" content="ぱちんこスペック">
-  <link rel="stylesheet" href="styles.css?v=1.0.3">
+  <link rel="stylesheet" href="styles.css?v=1.0.4">
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
       <h1><img class="brand-logo" src="assets/logo.svg" alt="ぱちんこスペックライブラリ" width="1080" height="395"></h1>
-      <p class="brand-count"><span id="machineCount">0</span>機種 · v1.0.3</p>
+      <p class="brand-count"><span id="machineCount">0</span>機種 · v1.0.4</p>
     </div>
     <nav class="view-tabs" aria-label="表示切り替え">
       <button class="view-tab active" type="button" data-view="library" aria-pressed="true"><span class="view-label-desktop">機種一覧</span><span class="view-label-mobile">一覧</span></button>
@@ -148,7 +148,7 @@
         <section class="form-section">
           <h3>基本情報</h3>
           <div class="form-grid">
-            <label class="field field-wide"><span>機種名 *</span><input id="nameInput" required placeholder="例：e ○○○○"></label>
+            <label class="field field-wide"><span>機種名（AIで自動取得可能） *</span><input id="nameInput" required placeholder="手入力するか、AIで読み取ってください"></label>
             <label class="field"><span>導入日</span><input id="introductionDateInput" type="date"></label>
             <label class="field"><span>シリーズ</span><input id="seriesInput" placeholder="シリーズ名"></label>
             <div class="field field-wide">
@@ -235,14 +235,14 @@
       <button class="icon-button" id="aiSpecCloseButton" type="button" aria-label="閉じる">×</button>
     </div>
     <div class="ai-spec-body">
-      <label class="field"><span>スペック情報のURL（任意）</span><input id="aiSpecReference" type="url" placeholder="https://"></label>
+      <label class="field"><span>スペック情報のURL（1行1件・最大20件）</span><textarea id="aiSpecReference" rows="5" placeholder="https://example.com/spec1&#10;https://example.com/spec2" spellcheck="false"></textarea></label>
       <label class="field"><span>スペック文章（URLがない場合はこちら）</span><textarea id="aiSpecPaste" rows="5" maxlength="30000" placeholder="初当り確率、RUSH突入率、振り分けなどを貼り付け"></textarea></label>
-      <p class="section-note">URLか文章のどちらかを入力してください。Web検索は行いません。</p>
+      <p class="section-note">複数URLをAIが照合し、機種名も取得します。URLまたは文章のどちらかを入力してください。Web検索は行いません。</p>
       <p class="section-note" id="aiSpecStatus" role="status" aria-live="polite">公開情報を調査します。</p>
       <div id="aiSpecPreview" hidden>
         <div id="aiSpecSummary" aria-label="調査したスペックの概要"></div>
         <div id="aiSpecWarnings" class="ai-spec-warnings"></div>
-        <h3>読み取り元</h3>
+        <h3>読み取りに成功した資料</h3>
         <ul id="aiSpecSources" class="ai-spec-sources"></ul>
         
         <p class="section-note">AIの読み取りには誤りがあり得ます。機種と数値を確認してから反映してください。未確認項目は自動補完しません。</p>
@@ -328,9 +328,9 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="spec-model.js?v=1.0.3"></script>
-  <script src="ai-config.js?v=1.0.3&amp;id=198dae62fb19"></script>
-  <script src="ai-spec.js?v=1.0.3"></script>
-  <script src="app.js?v=1.0.3"></script>
+  <script src="spec-model.js?v=1.0.4"></script>
+  <script src="ai-config.js?v=1.0.4&amp;id=198dae62fb19"></script>
+  <script src="ai-spec.js?v=1.0.4"></script>
+  <script src="app.js?v=1.0.4"></script>
 </body>
 </html>
