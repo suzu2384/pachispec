@@ -1,6 +1,6 @@
-# v1.0.1 — Gemini 2.5モデル選択に対応
+# v1.0.2 — AI検索エラーの診断を改善
 
-- GitHub Actionsの`PACHISPEC_AI_MODEL`で`gemini-2.5-flash-lite`および`gemini-2.5-flash`を選択可能にしました。
-- ブラウザ側の組み込みAIモデル許可リストも更新しました。
-- 既定モデルは`gemini-3.5-flash-lite`のままです。実際のモデル切り替えにはGitHub Repository Variableの更新と設定同期が必要です。
-- キャッシュ識別子と表示バージョンをv1.0.1に更新しました。
+- Firebase AI Logicの404（モデル利用不可／AI Logic未設定）、401・403（認証／権限）、400（Google検索非対応）、429（利用枠超過）、503（サービス一時停止）を分けて案内。
+- Gemini 2.5は過去に利用実績のあるFirebaseプロジェクトに限定され、新規プロジェクトでは利用できないことを明記。
+- 不明な失敗の詳細はブラウザの開発者コンソールにも記録。
+- FirebaseやGoogleのモデル利用制限そのものは変更しません。

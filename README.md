@@ -162,7 +162,7 @@ GitHubの「Settings → Secrets and variables → Actions → Variables」で�
 - PACHISPEC_AI_SPARK_VERIFIED：Firebase Sparkプランで請求アカウントが関連付けられていないことを確認した場合に true
 - PACHISPEC_AI_MODEL：省略時 gemini-3.5-flash-lite。gemini-3.1-flash-lite、gemini-3.8-flashに加え、gemini-2.5-flash-lite、gemini-2.5-flashも選択可。モデルの対応状況や無料枠・検索機能の利用可否はFirebaseのプロジェクトとGoogle側の条件によります。
 
-Firebase Webアプリ設定とサイトキーは公開情報です。秘密鍵、個人のGemini APIキー、App Checkデバッグトークンは設定しないでください。Sparkプランの確認がないとAI機能は無効です。組み込みAIではGoogle検索グラウンディングを使用し、検索候補・出典リンクを画面に表示します。Firebase AI LogicとApp Checkが利用できるように設定・ドメイン・利用枠を確認してください。
+Firebase Webアプリ設定とサイトキーは公開情報です。なお、Gemini 2.5はGoogle側で過去にモデルを利用したプロジェクトのみに提供されているため、新規プロジェクトでは404になる場合があります。またGemini 3以降のGoogle検索グラウンディングは無料枠では利用できないため、Sparkプランでモデル名を3系に変更しても検索が成功するとは限りません。モデル利用可否やApp Check等の失敗理由は画面に表示されます。秘密鍵、個人のGemini APIキー、App Checkデバッグトークンは設定しないでください。Sparkプランの確認がないとAI機能は無効です。組み込みAIではGoogle検索グラウンディングを使用し、検索候補・出典リンクを画面に表示します。Firebase AI LogicとApp Checkが利用できるように設定・ドメイン・利用枠を確認してください。
 
 Repository Variablesの設定後、GitHub Actionsの「Validate, sync AI config and release」を手動実行するかmainブランチに変更を反映してください。公開用のai-config.jsを生成し、キャッシュ識別子も更新します。変数未設定の状態ではAIは無効のまま公開されます。
 

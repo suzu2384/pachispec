@@ -50,3 +50,13 @@ test('Gemini 2.5 Flash and Flash-Lite can be selected via public config',()=>{
  }
  assert.equal(ai.isConfigured({...config,model:'gemini-unsupported'}),false);
 });
+
+test('Firebase AI failures give actionable diagnostics instead of hiding status codes',()=>{
+ const model='gemini-2.5-flash-lite';
+ assert.match(ai.explainAIError({message:'404: model was not found or your project does not have access to it'},model),/過去に利用実績/);
+ assert.match(ai.explainAIError({message:'404: Firebase AI Logic genai config not found'},model),/Gemini Developer API/);
+ assert.match(ai.explainAIError({code:'ai/app-check-error',message:'attestation failed'},model),/App Check/);
+ assert.match(ai.explainAIError({message:'429: quota exceeded'},model),/429/);
+ assert.match(ai.explainAIError({message:'400: Grounding with Google Search is not supported on Free Tier'},'gemini-3.5-flash-lite'),/Google検索/);
+ assert.match(ai.explainAIError({message:'403: PERMISSION_DENIED'},model),/403/);
+});

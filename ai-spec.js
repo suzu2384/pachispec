@@ -122,6 +122,34 @@
   ]);
   return {app,check,ai};
  }
+ function explainAIError(err,model){
+  const message=String(err?.message||err||'');
+  const code=String(err?.code||'');
+  const details=message+' '+code;
+  const name=str(model)||'指定モデル';
+  if(/429|quota|resource.exhausted|rate.limit/i.test(details))
+   return 'AIの無料利用枠・リクエスト上限に達しました（429）。上限が回復してから再試行してください。';
+  if(/503|overloaded|service.unavailable/i.test(details))
+   return 'AIが一時的に利用できません（503）。時間をおいて再試行してください。';
+  if(/genai config not found/i.test(details))
+   return 'Firebase AI Logicの設定が見つかりません（404）。Firebase ConsoleでGemini Developer APIを有効にしてください。';
+  if(/404|model.or.resource|not.found|does not have access/i.test(details)){
+   if(/^gemini-2\.5-/.test(name))
+    return 'モデル「'+name+'」を利用できません（404）。Gemini 2.5は過去に利用実績のあるプロジェクトに限定されています。新しいFirebaseプロジェクトでは利用できない可能性があります。';
+   return 'モデル「'+name+'」にアクセスできません（404）。モデル名とFirebaseプロジェクトの利用権限を確認してください。';
+  }
+  if(/failed to fetch dynamically imported module|importing a module script failed|failed to load module script/i.test(details))
+   return 'Firebase SDKを読み込めません。ネットワークやブラウザのコンテンツブロッカーを確認してください。';
+  if(/app.?check|recaptcha|attestation|invalid.token/i.test(details))
+   return 'Firebase App Checkの認証に失敗しました。reCAPTCHA Enterpriseのドメイン登録とApp Checkの設定を確認してください（'+(code||'認証エラー')+'）。';
+  if(/grounding|google.search|googleSearch|search tool/i.test(details)&&/not.available|not.supported|billing|paid|not.allowed|forbidden|403|400/i.test(details))
+   return 'このモデル・料金プランではGoogle検索を利用できない可能性があります（'+(code||'検索機能エラー')+'）。';
+  if(/403|401|permission.denied|forbidden/i.test(details))
+   return 'AIへのアクセスが拒否されました（403/401）。Firebase App Check、プロジェクトの無料枠利用資格、モデルの利用制限を確認してください。';
+  if(/400|invalid.argument|bad.request/i.test(details))
+   return 'AIがリクエストを受け付けませんでした（400）。モデルとGoogle検索ツールの対応状況を確認してください。';
+  return 'AI検索に失敗しました'+(code?'（'+code.slice(0,75)+'）':'')+'。ブラウザの開発者ツールでエラーの詳細を確認してください。';
+ }
  function makeClient(config,{loadSDK=sdk}={}){
   let pending=null;
   async function getService(){
@@ -142,11 +170,8 @@
     const model=ai.getGenerativeModel(svc,{model:config.model,tools:[{googleSearch:{}}],generationConfig:{temperature:0.1}});
     result=(await model.generateContent(prompt(str(name),ref))).response;
    }catch(err){
-    const m=String(err?.message||err)+' '+String(err?.code||'');
-    if(/429|quota|resource.exhausted|rate.limit/i.test(m))throw Error('AIの共有利用枠に達しました。');
-    if(/503|unavailable|overloaded/i.test(m))throw Error('AIが一時的に利用できません（503）。');
-    if(/403|401|app.?check|recaptcha|permission|api.key|attestation/i.test(m))throw Error('FirebaseまたはApp Checkの認証に失敗しました。設定とドメインを確認してください。');
-    throw Error('AI検索に失敗しました。通信とモデル設定を確認してください。');
+    console.error('[PachiSpec] Firebase AI request failed',err);
+    throw Error(explainAIError(err,config.model));
    }
    const grounding=result?.candidates?.[0]?.groundingMetadata;
    const sources=(grounding?.groundingChunks||[]).map(c=>({title:str(c?.web?.title)||'参照ページ',url:link(c?.web?.uri)}))
@@ -162,6 +187,6 @@
    return {spec,sources,grounding,warnings};
   }};
  }
- root.PachiSpecAI={isConfigured,available,makeClient,normalizeResponse,parseResponse,prompt};
+ root.PachiSpecAI={isConfigured,available,makeClient,normalizeResponse,parseResponse,prompt,explainAIError};
  if(typeof module!=='undefined'&&module.exports)module.exports=root.PachiSpecAI;
 })(globalThis);
