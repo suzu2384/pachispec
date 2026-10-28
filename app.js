@@ -284,6 +284,9 @@
       customSpecs: Array.isArray(machine.customSpecs) ? machine.customSpecs : [],
       specEvidence: machine.specEvidence && typeof machine.specEvidence === 'object' ? {
         sourceUrl: String(machine.specEvidence.sourceUrl || ''), checkedAt: String(machine.specEvidence.checkedAt || ''),
+        sourceUrls: (Array.isArray(machine.specEvidence.sourceUrls) && machine.specEvidence.sourceUrls.length
+          ? machine.specEvidence.sourceUrls : [machine.specEvidence.sourceUrl])
+          .filter(url => typeof url === 'string' && /^https?:\/\//i.test(url)).slice(0,20),
         probabilityLabel: String(machine.specEvidence.probabilityLabel || ''), payoutUnit: String(machine.specEvidence.payoutUnit || ''),
         entryBasisConfirmed: machine.specEvidence.entryBasisConfirmed === true, note: String(machine.specEvidence.note || '')
       } : null,
@@ -619,7 +622,9 @@
     const modeNames = new Map((model?.states || []).map(mode => [mode.id, mode.name]));
     const target = id => id === 'end' ? '通常時へ終了' : modeNames.get(id) || '不明';
     const urlLink = url => /^https?:\/\//i.test(url || '') ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">参照ページを開く</a>` : '';
-    return `${model?.version === 2 ? `<section class="detail-section"><h3>モード別の入力条件</h3>${model.states.map(mode => `<div class="mode-spec-detail"><h4>${escapeHtml(mode.name || '名称未入力')}</h4><p>${escapeHtml(({st:`1/${mode.hitProbability ?? '未入力'}を${mode.spins ?? '未入力'}回抽選`,next:'次の当りまで継続',rate:`掲載継続率${mode.continuationRate ?? '未入力'}%による概算`,unknown:'特殊条件・未確認'})[mode.method] || '方式未確認')}</p>${mode.method !== 'next' ? `<p>当らなかった後：${escapeHtml(target(mode.onMiss))}</p>` : ''}${mode.outcomes.map(row => `<p>${escapeHtml(row.label || '当り')}：${escapeHtml(row.rate ?? '—')}% ／ ${escapeHtml(row.payoutText || '出球不明')} → ${escapeHtml(target(row.nextStateId))}</p>`).join('')}<p>${escapeHtml(mode.note || '')} ${urlLink(mode.sourceUrl)}</p></div>`).join('')}</section>` : ''}${evidence ? `<section class="detail-section"><h3>参照情報</h3><p>${urlLink(evidence.sourceUrl)} ${escapeHtml(evidence.checkedAt || '')}</p><p>初当りの名称：${escapeHtml(evidence.probabilityLabel || '未確認')} ／ 突入率と同じ対象：${evidence.entryBasisConfirmed ? '確認済み' : '未確認'}</p><div class="detail-note">${escapeHtml(evidence.note)}</div></section>` : ''}`;
+    const evidenceUrls = Array.isArray(evidence?.sourceUrls) && evidence.sourceUrls.length ?
+      evidence.sourceUrls : (evidence?.sourceUrl ? [evidence.sourceUrl] : []);
+    return `${model?.version === 2 ? `<section class="detail-section"><h3>モード別の入力条件</h3>${model.states.map(mode => `<div class="mode-spec-detail"><h4>${escapeHtml(mode.name || '名称未入力')}</h4><p>${escapeHtml(({st:`1/${mode.hitProbability ?? '未入力'}を${mode.spins ?? '未入力'}回抽選`,next:'次の当りまで継続',rate:`掲載継続率${mode.continuationRate ?? '未入力'}%による概算`,unknown:'特殊条件・未確認'})[mode.method] || '方式未確認')}</p>${mode.method !== 'next' ? `<p>当らなかった後：${escapeHtml(target(mode.onMiss))}</p>` : ''}${mode.outcomes.map(row => `<p>${escapeHtml(row.label || '当り')}：${escapeHtml(row.rate ?? '—')}% ／ ${escapeHtml(row.payoutText || '出球不明')} → ${escapeHtml(target(row.nextStateId))}</p>`).join('')}<p>${escapeHtml(mode.note || '')} ${urlLink(mode.sourceUrl)}</p></div>`).join('')}</section>` : ''}${evidence ? `<section class="detail-section"><h3>参照情報</h3><p>確認日：${escapeHtml(evidence.checkedAt || '—')}</p>${evidenceUrls.length ? `<ul class="ai-spec-sources">${evidenceUrls.map(url => `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a></li>`).join('')}</ul>` : ''}<p>初当りの名称：${escapeHtml(evidence.probabilityLabel || '未確認')} ／ 突入率と同じ対象：${evidence.entryBasisConfirmed ? '確認済み' : '未確認'}</p><div class="detail-note">${escapeHtml(evidence.note)}</div></section>` : ''}`;
   }
 
   function formatRating(value) {
@@ -1251,10 +1256,12 @@
     if(spec.flows.length)renderRepeater('flows',spec.flows);
     if(spec.customSpecs.length)renderRepeater('customSpecs',spec.customSpecs);
     if(spec.rushPayoutModel)state.editorRushModel = spec.rushPayoutModel;
-    const extraSources = aiResearch.sources.map(s => s.url).join('\n');
     state.editorSpecEvidence = {
       ...spec.specEvidence,
-      note: [spec.specEvidence.note, aiResearch.sourceMode==='url'?'AI読み取りの指定URL:':'AI読み取り元: 貼り付け資料（Web照合なし）', extraSources].filter(Boolean).join('\n').slice(0,1800)
+      sourceUrls: aiResearch.sources.map(s => s.url),
+      note: [spec.specEvidence.note, ...spec.conflicts.map(x => '資料の不一致: ' + x),
+        aiResearch.sourceMode==='text'?'AI読み取り元: 貼り付け資料（Web照合なし）':'']
+        .filter(Boolean).join('\n').slice(0,4000)
     };
     const expectation = spec.initialPayoutExpectation;
     if(expectation.kind !== 'auto' && expectation.value !== null){
@@ -1277,7 +1284,7 @@
     if(!aiAvailable) return;
     ++aiRequestSerial;
     aiResearch = null;
-    $('#aiSpecReference').value = state.editorSpecEvidence?.sourceUrl || '';
+    $('#aiSpecReference').value = state.editorSpecEvidence?.sourceUrls?.join('\n') || state.editorSpecEvidence?.sourceUrl || '';
     $('#aiSpecPreview').hidden = true;
     $('#aiSpecApplyButton').disabled = true;
     $('#aiSpecPaste').value = '';

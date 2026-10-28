@@ -246,6 +246,8 @@
    if(failedInitial.length&&successfulUrls.length){
     result=await generate(successfulUrls);
     const retried=urlContextStatuses(result,successfulUrls);
+    if(retried.some(s=>s.status!=='URL_RETRIEVAL_STATUS_SUCCESS'))
+     throw Error('取得できたURLの再照合中に読み取れないページが発生しました。URLを減らして再試行してください。');
     const stillSuccessful=new Set(retried.filter(s=>s.status==='URL_RETRIEVAL_STATUS_SUCCESS').map(s=>s.url));
     successfulUrls=successfulUrls.filter(url=>stillSuccessful.has(url));
     if(!successfulUrls.length)

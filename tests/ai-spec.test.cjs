@@ -219,5 +219,35 @@ test('AI import opens without a machine name, fills blank name and preserves exi
  assert.ok(!app.includes("showToast('先に機種名を入力してください')"));
  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
  assert.ok(html.includes('<textarea id="aiSpecReference"'));
- assert.ok(html.includes('v1.0.4'));
+ assert.ok(html.includes('v1.0.5'));
+});
+
+test('multiple source URLs are persisted and visible without replacing legacy single-URL fields',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.ok(app.includes('sourceUrls: aiResearch.sources.map(s => s.url)'));
+ assert.ok(app.includes('machine.specEvidence.sourceUrls'));
+ assert.ok(app.includes("state.editorSpecEvidence?.sourceUrls?.join('\\n')"));
+ assert.ok(app.includes('evidenceUrls.map(url =>'));
+});
+test('if recheck cannot confirm all candidate sources, result is not adopted',async()=>{
+ const good='https://example.com/one',bad='https://example.com/two';
+ let calls=0;
+ const loadSDK=async()=>({
+  app:{initializeApp:()=>({})},
+  check:{ReCaptchaEnterpriseProvider:class{},initializeAppCheck:()=>{}},
+  ai:{GoogleAIBackend:class{},getAI:()=>({}),getGenerativeModel:()=>({
+   generateContent:async()=>{
+    calls++;
+    return {response:{
+     candidates:[{urlContextMetadata:{urlMetadata:calls===1?[
+      {retrievedUrl:good,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_SUCCESS'},
+      {retrievedUrl:bad,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_ERROR'}]:
+      [{retrievedUrl:good,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_ERROR'}]}}],
+     text:()=>JSON.stringify({name:'e確認',basic:{initialProbability:319.7}})
+    }};
+   }
+  })}
+ });
+ await assert.rejects(ai.makeClient(config,{loadSDK}).research('',good+'\n'+bad),/再照合中/);
+ assert.equal(calls,2);
 });
