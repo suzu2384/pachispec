@@ -241,7 +241,7 @@
    const failedInitial=statuses.filter(s=>s.status!=='URL_RETRIEVAL_STATUS_SUCCESS');
    let successfulUrls=statuses.filter(s=>s.status==='URL_RETRIEVAL_STATUS_SUCCESS').map(s=>s.url);
    if(urls.length&&!successfulUrls.length)
-    throw Error('指定URLを1件も読み取れませんでした。公開ページを確認するか、スペック文章だけで試してください。');
+    throw Error('指定URLのページ本文を取得できませんでした（1件も読み取れません）。公開ページを確認するか、スペック文章だけで試してください。');
    // If some pages fail, regenerate using only retrieved URLs so inaccessible pages cannot influence the result.
    if(failedInitial.length&&successfulUrls.length){
     result=await generate(successfulUrls);
