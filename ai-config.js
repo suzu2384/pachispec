@@ -1,2 +1,2 @@
 /* PUBLIC Firebase AI Logic Web config, not a private Gemini API key. */
-globalThis.PACHISPEC_AI_CONFIG=Object.freeze({"mode":"disabled","firebase":null,"appCheckSiteKey":"","model":"gemini-3.5-flash-lite"});
+globalThis.PACHISPEC_AI_CONFIG=Object.freeze({"mode":"shared-firebase","firebase":{"apiKey":"AIzaSyCSrZhXOGDGdNbYFUVVxMn76bjgvZM2ugE","authDomain":"pachispec.firebaseapp.com","projectId":"pachispec","storageBucket":"pachispec.firebasestorage.app","messagingSenderId":"326268027752","appId":"1:326268027752:web:f76ec8bfc24c46c8a98cdd"},"appCheckSiteKey":"6LckvAMuAAAAAMptnqfpiRgJNdu7cNdQcQeT-Zdv","model":"gemini-3.5-flash-lite"});
