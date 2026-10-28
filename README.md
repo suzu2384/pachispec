@@ -141,30 +141,26 @@ GitHub Pagesのサブディレクトリでも使えるよう、参照先は相�
 
 ## 組み込みAIによるスペック入力
 
-機種を追加・編集するときは機種名を入力後、「AIで入力」を押してください。Google検索の結果を基に、導入日、メーカー、初当り、RUSH突入率・継続率・RUSH中当り、振り分け、状態遷移、その他のスペック、参照先を取得します。参考ページURLを指定することもできます。
+機種名を入力し「AIで入力」を押すと、URL Contextで公開スペックページを読み取るか、貼り付けたスペック文章をFirebase AI Logicで整理できます。URLと文章はどちらか片方のみでも使えます。Google検索グラウンディングは実行しません。**機種名だけでネット検索はできません。**
 
-検索結果の出典・未確認項目を確認し「編集画面に反映」を押してから、従来の編集画面の「保存」で確定してください。検索結果の採用前にデータを勝手に書き換えず、既存の個人評価と評価メモも保持します。AIによる調査は誤りがあり得るため、型式と公開情報を確認してください。未確認の数値はAIに推測させず、わからないまま残します。
+初当り確率、RUSH突入率、継続率、当り振り分け、状態遷移などの未確認項目は推測しません。指定URLが取得できなかった場合は入力に反映せず、文章だけを利用した場合は「Web照合なし」と明示します。確認画面で内容をチェックし「編集画面に反映」してから編集画面の「保存」で確定します。個人評価・評価メモは維持します。
 
-実質RUSH突入確率の分母は「初当り確率の分母 ÷ (RUSH突入率 ÷ 100)」です。両方の有効値があれば自動計算します。確率が同じ当りを対象としているか未確認の場合は、詳細に注意書きを付けます。チャージ込みの合算確率と図柄揃い確率を混ぜると正確な計算にならないため注意してください。
-
-RUSH出球分布は、突入後の抽選・出球・状態遷移など必要条件が揃う場合だけ算出します。条件不足の場合は「未算出」です。新しいデータ形式ではrushPayoutModel.version 2を継続して使用します。古いデータと個人評価は移行せずそのまま読み込めます。
+実質RUSH突入確率の分母は「初当り確率の分母 ÷ (RUSH突入率 ÷ 100)」で自動計算します。母集団の相違（チャージ込みと図柄揃いなど）には注意してください。RUSH出球分布は確定できる情報が揃った場合だけ算出します。
 
 ### 組み込みAIの設定
 
-GitHub Pages等のHTTP(S)で開いたときだけAI機能が利用できます。file:// で直接開いた場合、AIボタンを無効化し、その他の閲覧・手入力・ローカル保存は従来どおり使用できます。
+GitHub Pages等のHTTP(S)で開いたときだけ利用できます。file:// で直接開いた場合はAIボタンを無効化します。
 
-Firebaseプロジェクトを用意し、Gemini Developer APIを使用するFirebase AI Logicを有効化してください。Firebase Webアプリを登録し、Firebase App CheckのreCAPTCHA Enterpriseを有効にして、GitHub Pagesの公開ドメインを登録します。Firestore、独自サーバー、個別のGemini APIキー入力は不要です。
+FirebaseでGemini Developer APIを利用するFirebase AI LogicとApp Check（reCAPTCHA Enterprise）を設定します。GitHubの「Settings → Secrets and variables → Actions → Variables」に以下を登録してください。
 
-GitHubの「Settings → Secrets and variables → Actions → Variables」で次のRepository Variablesを設定してください。
-
-- PACHISPEC_AI_FIREBASE_CONFIG：Firebase Webアプリ設定のJSON（apiKey、projectId、appIdを含む）
+- PACHISPEC_AI_FIREBASE_CONFIG：Firebase Webアプリ設定のJSON（apiKey、projectId、appId）
 - PACHISPEC_AI_APP_CHECK_SITE_KEY：reCAPTCHA Enterpriseの公開サイトキー
-- PACHISPEC_AI_SPARK_VERIFIED：Firebase Sparkプランで請求アカウントが関連付けられていないことを確認した場合に true
-- PACHISPEC_AI_MODEL：省略時 gemini-3.5-flash-lite。gemini-3.1-flash-lite、gemini-3.8-flashに加え、gemini-2.5-flash-lite、gemini-2.5-flashも選択可。モデルの対応状況や無料枠・検索機能の利用可否はFirebaseのプロジェクトとGoogle側の条件によります。
+- PACHISPEC_AI_SPARK_VERIFIED：Sparkプランで請求アカウントが関連付けられていないことを確認した場合に true
+- PACHISPEC_AI_MODEL：既定 gemini-3.5-flash-lite。3.1 Flash-Lite、3.8 Flash、2.5 Flash系も許可していますが、2.5系は利用実績のないプロジェクトで404となります。2.5系がモデル利用不可の404を返した場合のみ、AI入力は3.5 Flash-Liteにフォールバックします。
 
-Firebase Webアプリ設定とサイトキーは公開情報です。なお、Gemini 2.5はGoogle側で過去にモデルを利用したプロジェクトのみに提供されているため、新規プロジェクトでは404になる場合があります。またGemini 3以降のGoogle検索グラウンディングは無料枠では利用できないため、Sparkプランでモデル名を3系に変更しても検索が成功するとは限りません。モデル利用可否やApp Check等の失敗理由は画面に表示されます。秘密鍵、個人のGemini APIキー、App Checkデバッグトークンは設定しないでください。Sparkプランの確認がないとAI機能は無効です。組み込みAIではGoogle検索グラウンディングを使用し、検索候補・出典リンクを画面に表示します。Firebase AI LogicとApp Checkが利用できるように設定・ドメイン・利用枠を確認してください。
+FirebaseのWeb設定とApp Checkサイトキーは公開情報です。秘密鍵や個人Gemini APIキーは含めないでください。URL ContextはSparkのGemini Developer API無料枠で利用できますが、利用枠やアクセスできないURLの制約があり、ページの子リンクは自動で巡回しません。AIが本文を読み取ったことを確認できたURLのみ出典として扱います。
 
-Repository Variablesの設定後、GitHub Actionsの「Validate, sync AI config and release」を手動実行するかmainブランチに変更を反映してください。公開用のai-config.jsを生成し、キャッシュ識別子も更新します。変数未設定の状態ではAIは無効のまま公開されます。
+Repository Variables変更後、GitHub Actionsの「Validate, sync AI config and release」を手動実行するかmainに変更を反映してください。公開用ai-config.jsとキャッシュ識別子が自動更新されます。
 
 ### バージョンとリリース
 

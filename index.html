@@ -12,13 +12,13 @@
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=2" sizes="180x180">
   <link rel="manifest" href="site.webmanifest">
   <meta name="apple-mobile-web-app-title" content="ぱちんこスペック">
-  <link rel="stylesheet" href="styles.css?v=1.0.2">
+  <link rel="stylesheet" href="styles.css?v=1.0.3">
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
       <h1><img class="brand-logo" src="assets/logo.svg" alt="ぱちんこスペックライブラリ" width="1080" height="395"></h1>
-      <p class="brand-count"><span id="machineCount">0</span>機種 · v1.0.2</p>
+      <p class="brand-count"><span id="machineCount">0</span>機種 · v1.0.3</p>
     </div>
     <nav class="view-tabs" aria-label="表示切り替え">
       <button class="view-tab active" type="button" data-view="library" aria-pressed="true"><span class="view-label-desktop">機種一覧</span><span class="view-label-mobile">一覧</span></button>
@@ -235,19 +235,21 @@
       <button class="icon-button" id="aiSpecCloseButton" type="button" aria-label="閉じる">×</button>
     </div>
     <div class="ai-spec-body">
-      <label class="field"><span>参考ページURL（任意）</span><input id="aiSpecReference" type="url" placeholder="https://"></label>
+      <label class="field"><span>スペック情報のURL（任意）</span><input id="aiSpecReference" type="url" placeholder="https://"></label>
+      <label class="field"><span>スペック文章（URLがない場合はこちら）</span><textarea id="aiSpecPaste" rows="5" maxlength="30000" placeholder="初当り確率、RUSH突入率、振り分けなどを貼り付け"></textarea></label>
+      <p class="section-note">URLか文章のどちらかを入力してください。Web検索は行いません。</p>
       <p class="section-note" id="aiSpecStatus" role="status" aria-live="polite">公開情報を調査します。</p>
       <div id="aiSpecPreview" hidden>
         <div id="aiSpecSummary" aria-label="調査したスペックの概要"></div>
         <div id="aiSpecWarnings" class="ai-spec-warnings"></div>
-        <h3>出典</h3>
+        <h3>読み取り元</h3>
         <ul id="aiSpecSources" class="ai-spec-sources"></ul>
-        <div id="aiSpecGoogleSearch" class="ai-spec-google-search"></div>
-        <p class="section-note">AIの検索結果は誤る場合があります。機種と数値を確認してから反映してください。未確認項目は自動補完しません。</p>
+        
+        <p class="section-note">AIの読み取りには誤りがあり得ます。機種と数値を確認してから反映してください。未確認項目は自動補完しません。</p>
       </div>
     </div>
     <div class="dialog-actions">
-      <button class="button button-ghost" id="aiSpecSearchButton" type="button">検索する</button>
+      <button class="button button-ghost" id="aiSpecSearchButton" type="button">AIで読み取る</button>
       <span class="action-spacer"></span>
       <button class="button button-primary" id="aiSpecApplyButton" type="button" disabled>編集画面に反映</button>
     </div>
@@ -326,9 +328,9 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="spec-model.js?v=1.0.2"></script>
-  <script src="ai-config.js?v=1.0.2&amp;id=cdd71dbbe964"></script>
-  <script src="ai-spec.js?v=1.0.2"></script>
-  <script src="app.js?v=1.0.2"></script>
+  <script src="spec-model.js?v=1.0.3"></script>
+  <script src="ai-config.js?v=1.0.3&amp;id=cdd71dbbe964"></script>
+  <script src="ai-spec.js?v=1.0.3"></script>
+  <script src="app.js?v=1.0.3"></script>
 </body>
 </html>

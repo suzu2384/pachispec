@@ -631,6 +631,8 @@ button:disabled { cursor: not-allowed; opacity: .48; transform: none !important;
 .ai-spec-dialog { width: min(760px, calc(100% - 28px)); }
 .ai-spec-body { padding: 18px clamp(16px, 3vw, 28px); max-height: min(66vh, 600px); overflow-y: auto; }
 .ai-spec-body > .field { display: block; }
+.ai-spec-body > .field + .field { margin-top: 12px; }
+.ai-spec-body textarea { width: 100%; min-height: 105px; }
 .ai-spec-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin: 13px 0; }
 .ai-spec-summary-grid > div { display: flex; flex-direction: column; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .ai-spec-summary-grid span { color: var(--muted); font-size: .72rem; }

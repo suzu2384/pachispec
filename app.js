@@ -1152,10 +1152,10 @@
   const aiButton = $('#aiSpecButton');
   aiButton.disabled = !aiAvailable;
   aiButton.title = location.protocol === 'file:' ? 'ローカルファイルではAIを利用できません' :
-    aiAvailable ? '公開スペックをAIで検索します' : 'FirebaseとApp Checkの設定後に利用できます';
+    aiAvailable ? '指定URLまたは文章からスペックを読み取ります' : 'FirebaseとApp Checkの設定後に利用できます';
   $('#aiSpecAvailability').textContent = location.protocol === 'file:' ?
     'ローカルファイルではAI入力は使えません。手入力は利用できます。' :
-    aiAvailable ? '公開情報をAIで調べ、確認後に編集画面へ反映します。' :
+    aiAvailable ? 'URLまたは貼り付け文章をAIで整理し、確認後に反映します。' :
     'AIは未設定です。GitHubの変数設定後に利用できます。';
 
   function renderAIResearch(result) {
@@ -1178,9 +1178,7 @@
     $('#aiSpecWarnings').innerHTML = result.warnings.map(w => '<p>' + escapeHtml(w) + '</p>').join('');
     $('#aiSpecSources').innerHTML = result.sources.map(source => '<li><a href="' + escapeHtml(source.url) +
       '" target="_blank" rel="noopener noreferrer">' + escapeHtml(source.title) + '</a></li>').join('');
-    // Google Search terms require rendering the provider-supplied search entry point.
-    const searchHtml = result.grounding?.searchEntryPoint?.renderedContent;
-    $('#aiSpecGoogleSearch').innerHTML = typeof searchHtml === 'string' ? searchHtml : '';
+    if(!result.sources.length)$('#aiSpecSources').innerHTML = '<li>貼り付けたスペック文章（Web照合なし）</li>';
     $('#aiSpecPreview').hidden = false;
     $('#aiSpecApplyButton').disabled = false;
   }
@@ -1190,19 +1188,20 @@
     const name = $('#nameInput').value.trim();
     if(!name){ showToast('先に機種名を入力してください'); $('#nameInput').focus(); return; }
     const reference = $('#aiSpecReference').value.trim();
+    const sourceText = $('#aiSpecPaste').value.trim();
     aiBusy = true;
     const serial = ++aiRequestSerial;
     aiResearch = null;
     $('#aiSpecPreview').hidden = true;
     $('#aiSpecApplyButton').disabled = true;
     $('#aiSpecSearchButton').disabled = true;
-    $('#aiSpecStatus').textContent = '公開スペックを検索しています…';
+    $('#aiSpecStatus').textContent = 'スペック資料をAIで読み取っています…';
     try{
-      const response = await aiClient.research(name,reference);
+      const response = await aiClient.research(name,reference,sourceText);
       if(serial !== aiRequestSerial) return;
       aiResearch = response;
       renderAIResearch(response);
-      $('#aiSpecStatus').textContent = '検索結果を確認し、問題なければ編集画面に反映してください。';
+      $('#aiSpecStatus').textContent = 'AIの読み取り結果（'+response.modelUsed+'）を確認し、問題なければ編集画面に反映してください。';
     }catch(error){
       if(serial !== aiRequestSerial) return;
       $('#aiSpecStatus').textContent = error?.message || 'AI検索に失敗しました。';
@@ -1248,7 +1247,7 @@
     const extraSources = aiResearch.sources.map(s => s.url).slice(0,4).join('\n');
     state.editorSpecEvidence = {
       ...spec.specEvidence,
-      note: [spec.specEvidence.note, 'AI調査の検索出典:', extraSources].filter(Boolean).join('\n').slice(0,1800)
+      note: [spec.specEvidence.note, aiResearch.sourceMode==='url'?'AI読み取りの指定URL:':'AI読み取り元: 貼り付け資料（Web照合なし）', extraSources].filter(Boolean).join('\n').slice(0,1800)
     };
     const expectation = spec.initialPayoutExpectation;
     if(expectation.kind !== 'auto' && expectation.value !== null){
@@ -1278,7 +1277,8 @@
     $('#aiSpecReference').value = state.editorSpecEvidence?.sourceUrl || '';
     $('#aiSpecPreview').hidden = true;
     $('#aiSpecApplyButton').disabled = true;
-    $('#aiSpecStatus').textContent = '機種名から公開スペックを調べます。';
+    $('#aiSpecPaste').value = '';
+    $('#aiSpecStatus').textContent = 'URLまたはスペック文章を入力してください。';
     $('#aiSpecDialog').showModal();
   });
   $('#aiSpecSearchButton').addEventListener('click', generateAISpec);

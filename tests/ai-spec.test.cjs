@@ -60,3 +60,76 @@ test('Firebase AI failures give actionable diagnostics instead of hiding status 
  assert.match(ai.explainAIError({message:'400: Grounding with Google Search is not supported on Free Tier'},'gemini-3.5-flash-lite'),/Google検索/);
  assert.match(ai.explainAIError({message:'403: PERMISSION_DENIED'},model),/403/);
 });
+
+test('requires URL or pasted source material and never uses Google Search',async()=>{
+ let calls=0,options=null;
+ const loadSDK=async()=>({
+  app:{initializeApp:()=>({})},
+  check:{ReCaptchaEnterpriseProvider:class{},initializeAppCheck:()=>{}},
+  ai:{GoogleAIBackend:class{},getAI:()=>({}),
+   getGenerativeModel:(svc,opts)=>{
+    options=opts;
+    return {generateContent:async()=>{calls++;return {response:{
+     text:()=>JSON.stringify({name:'機種',basic:{initialProbability:319.7,rushEntryRate:50}})
+    }};}};
+   }}
+ });
+ const client=ai.makeClient(config,{loadSDK});
+ await assert.rejects(client.research('機種'),/URLか、スペック文章/);
+ const r=await client.research('機種','','初当り1/319.7、突入50%');
+ assert.equal(r.sourceMode,'text');
+ assert.equal(r.spec.basic.rushEntryRate,50);
+ assert.equal(r.sources.length,0);
+ assert.equal(calls,1);
+ assert.equal(options.tools,undefined);
+ assert.ok(r.warnings.some(w=>/Web上の情報との照合は行っていません/.test(w)));
+});
+test('URL Context is required and fetched URL is the only source',async()=>{
+ const page='https://example.com/spec';
+ let options=null;
+ let responseBody={candidates:[{urlContextMetadata:{
+  urlMetadata:[{retrievedUrl:page,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_SUCCESS'}]}}],
+  text:()=>JSON.stringify({name:'機種',basic:{initialProbability:199.9},specEvidence:{sourceUrl:'https://attacker.example/'}})
+ };
+ const loadSDK=async()=>({
+  app:{initializeApp:()=>({})},
+  check:{ReCaptchaEnterpriseProvider:class{},initializeAppCheck:()=>{}},
+  ai:{GoogleAIBackend:class{},getAI:()=>({}),
+   getGenerativeModel:(svc,opts)=>{
+    options=opts;
+    return {generateContent:async()=>({response:responseBody})};
+   }}
+ });
+ const client=ai.makeClient(config,{loadSDK});
+ let r=await client.research('機種',page);
+ assert.equal(r.sourceMode,'url');
+ assert.equal(r.spec.specEvidence.sourceUrl,page);
+ assert.equal(r.sources[0].url,page);
+ assert.equal(options.tools.length,1);
+ assert.ok('urlContext' in options.tools[0]);
+ assert.ok(!options.tools.some(t=>'googleSearch' in t));
+ responseBody={...responseBody,candidates:[{urlContextMetadata:{urlMetadata:[
+  {retrievedUrl:page,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_ERROR'}
+ ]}}]};
+ await assert.rejects(client.research('機種',page),/ページ本文を取得できません/);
+});
+test('falls back from unavailable 2.5 to 3.5 Flash-Lite only for model 404',async()=>{
+ const used=[];
+ const loadSDK=async()=>({
+  app:{initializeApp:()=>({})},
+  check:{ReCaptchaEnterpriseProvider:class{},initializeAppCheck:()=>{}},
+  ai:{GoogleAIBackend:class{},getAI:()=>({}),
+   getGenerativeModel:(svc,opts)=>({
+    generateContent:async()=>{
+     used.push(opts.model);
+     if(opts.model==='gemini-2.5-flash-lite')throw Error('404 Model was not found');
+     return {response:{text:()=>JSON.stringify({basic:{initialProbability:319.7}})}};
+    }
+   })}
+ });
+ const client=ai.makeClient({...config,model:'gemini-2.5-flash-lite'},{loadSDK});
+ const result=await client.research('機種','','初当り 1/319.7');
+ assert.equal(result.modelUsed,'gemini-3.5-flash-lite');
+ assert.equal(used.join(','),'gemini-2.5-flash-lite,gemini-3.5-flash-lite');
+ assert.ok(result.warnings.some(w=>/2.5は利用できない/.test(w)));
+});
