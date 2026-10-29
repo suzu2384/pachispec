@@ -1171,6 +1171,7 @@
     $('#aiSpecSummary').innerHTML =
       '<div class="ai-spec-summary-grid">' +
       row('検索された機種', spec.researchedName || '未確認') +
+      row('ホール導入日', spec.introductionDate || '未確認') +
       row('初当り', b.initialProbability ? '1/' + b.initialProbability : null) +
       row('RUSH突入率', b.rushEntryRate === null ? null : b.rushEntryRate + '%') +
       row('実質RUSH突入', b.initialProbability > 0 && b.rushEntryRate > 0 ? '約1/' + (b.initialProbability / (b.rushEntryRate / 100)).toFixed(1) : null) +

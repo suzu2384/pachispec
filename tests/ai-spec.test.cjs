@@ -187,7 +187,7 @@ test('partial retrieval retries with only successfully fetched URL and reports f
        {retrievedUrl:good,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_SUCCESS'},
        {retrievedUrl:bad,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_ERROR'}
       ]:[{retrievedUrl:good,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_SUCCESS'}]}}],
-     text:()=>JSON.stringify({name:p.includes(bad)?'混在した仮名':'e確認済み',basic:{initialProbability:199.9}})
+     text:()=>JSON.stringify({name:p.includes(bad)?'混在した仮名':'e確認済み',introductionDate:'2026-10-05',basic:{initialProbability:199.9}})
     }};
    }})}
  });
@@ -219,7 +219,7 @@ test('AI import opens without a machine name, fills blank name and preserves exi
  assert.ok(!app.includes("showToast('先に機種名を入力してください')"));
  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
  assert.ok(html.includes('<textarea id="aiSpecReference"'));
- assert.ok(html.includes('v1.0.5'));
+ assert.ok(html.includes('v1.0.6'));
 });
 
 test('multiple source URLs are persisted and visible without replacing legacy single-URL fields',()=>{
@@ -250,4 +250,67 @@ test('if recheck cannot confirm all candidate sources, result is not adopted',as
  });
  await assert.rejects(ai.makeClient(config,{loadSDK}).research('',good+'\n'+bad),/再照合中/);
  assert.equal(calls,2);
+});
+
+test('normalizes installation date formats and refuses nonexistent or partial dates',()=>{
+ const cases=[
+  ['2026-10-05','2026-10-05'],['2026/10/5','2026-10-05'],
+  ['2026年10月5日','2026-10-05'],['2026年10月05日（月）','2026-10-05'],
+  ['導入日：2026年10月5日','2026-10-05'],['２０２６年１０月５日','2026-10-05'],
+  ['2026-02-30',''],['2026年10月上旬',''],['2026年10月',''],
+  ['2026-10-05～',''],['2026-13-01','']
+ ];
+ for(const [value,expected] of cases)assert.equal(ai.normalizeIntroductionDate(value),expected,value);
+ assert.equal(ai.normalizeResponse({name:'機種',introductionDate:'2026年10月5日',basic:{initialProbability:199.9}}).introductionDate,'2026-10-05');
+});
+test('AI distribution payout has one clean amount, with RUSH and round descriptions in label',()=>{
+ const M=require('../spec-model.js');
+ const raw=[
+  {label:'10R+RUSH突入',rate:50,payout:'1,500個＋RUSH'},
+  {label:'3R 通常',rate:50,payout:'3R 450玉'}
+ ];
+ const spec=ai.normalizeResponse({name:'テスト',basic:{initialProbability:319},distributions:{special1:raw}});
+ assert.equal(spec.distributions.special1[0].payout,'1500個');
+ assert.equal(spec.distributions.special1[1].payout,'450個');
+ const rows=spec.distributions.special1.map(row=>({...row,rate:parseFloat(row.rate)}));
+ assert.equal(M.initialExpectation(rows).value,975);
+ assert.equal(M.initialExpectation(rows).kind,'exact');
+ assert.equal(ai.normalizeDistributionPayout('約1,500発').payout,'約1500個');
+ for(const value of ['300〜790個','1500個＋3000個','10R×10C×15個','RUSH突入','450個＋α']){
+  const out=ai.normalizeDistributionPayout(value);
+  assert.equal(out.payout,'',value);
+  assert.ok(out.detail);
+ }
+ const unclear=ai.normalizeResponse({name:'機種',basic:{initialProbability:319},distributions:{special1:[{label:'次回RUSH',rate:100,payout:'450個＋α'}]}});
+ assert.equal(unclear.distributions.special1[0].payout,'');
+ assert.match(unclear.distributions.special1[0].label,/450個＋α/);
+ assert.equal(M.initialExpectation(unclear.distributions.special1.map(row=>({...row,rate:parseFloat(row.rate)}))).value,null);
+});
+test('URL installation date can be recovered with one focused second pass',async()=>{
+ const page='https://example.com/spec';
+ let calls=0;
+ const loadSDK=async()=>({
+  app:{initializeApp:()=>({})},
+  check:{ReCaptchaEnterpriseProvider:class{},initializeAppCheck:()=>{}},
+  ai:{GoogleAIBackend:class{},getAI:()=>({}),
+   getGenerativeModel:()=>({generateContent:async prompt=>{
+    calls++;
+    return {response:{
+     candidates:[{urlContextMetadata:{urlMetadata:[{retrievedUrl:page,urlRetrievalStatus:'URL_RETRIEVAL_STATUS_SUCCESS'}]}}],
+     text:()=>JSON.stringify(calls===1
+       ? {name:'e機種',basic:{initialProbability:199.9}}
+       : {introductionDate:'2026年10月5日',sourceUrl:page})
+    }};
+   }})}
+ });
+ const r=await ai.makeClient(config,{loadSDK}).research('',page);
+ assert.equal(calls,2);
+ assert.equal(r.spec.introductionDate,'2026-10-05');
+ assert.ok(!r.warnings.some(w=>w.includes('導入日を資料から確認できませんでした')));
+ const fromOther=ai.parseIntroductionDateResponse(JSON.stringify({introductionDate:'2026-10-05',sourceUrl:'https://example.org/other'}),[page]);
+ assert.equal(fromOther,'');
+});
+test('AI preview includes a date even if not available',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.match(app,/row\('ホール導入日', spec\.introductionDate \|\| '未確認'\)/);
 });
