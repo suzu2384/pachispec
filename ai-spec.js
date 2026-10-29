@@ -171,6 +171,29 @@
    '未確認の機種名・モデル・当り振り分けを作らない。'
   ].filter(Boolean).join('\n');
  }
+ function introductionDatePrompt(name,urls,sourceText){
+  return [
+   '次の指定資料だけから、ぱちんこ機種の日本国内のホール導入開始日を確認してください。',
+   name?'対象の機種名・型式: '+name:'',
+   urls.length?'以下のURLをURL Contextで読み、導入日を確認してください:\n'+urls.join('\n'):'',
+   sourceText?'参照文章:\n<spec_data>\n'+sourceText+'\n</spec_data>':'',
+   '「ホール導入」「全国導入」「設置開始」「稼働開始」の日付だけを確認してください。',
+   '記事公開・更新日・検定通過・発表日・別型式を絶対に採用しない。',
+   '年・月・日が揃う正確な日付だけをYYYY-MM-DDで返してください。月だけ、上旬、矛盾する日付なら空文字。',
+   'Web検索、記憶や推測による補完は禁止。',
+   'JSONだけ返す: {"introductionDate":"","sourceUrl":""}',
+   'sourceUrlは日付が明記された指定URLを正確に記入してください。'
+  ].filter(Boolean).join('\n');
+ }
+ function parseIntroductionDateResponse(body,sourceUrls=[]){
+  try{
+   const parsed=JSON.parse(str(body).replace(/^\x60{3}(?:json)?\s*/i,'').replace(/\x60{3}$/,'').trim());
+   const date=normalizeIntroductionDate(parsed?.introductionDate);
+   if(!date)return '';
+   if(sourceUrls.length&&!sourceUrls.includes(link(parsed?.sourceUrl)))return '';
+   return date;
+  }catch{return '';}
+ }
  function urlContextStatuses(response,ref){
   const urls=parseSourceUrls(ref);
   const candidate=response?.candidates?.[0];
@@ -243,31 +266,31 @@
    const pasted=str(sourceText);
    if(!urls.length&&!pasted)throw Error('スペックが載っているURLか、スペック文章を入力してください。');
    if(pasted.length>30000)throw Error('貼り付け文章は30,000文字以内にしてください。');
-   const run=async(modelName,activeUrls)=>{
+   const run=async(modelName,activeUrls,requestText)=>{
     const {ai,svc}=await getService();
     const model=ai.getGenerativeModel(svc,{
      model:modelName,
      ...(activeUrls.length?{tools:[{urlContext:{}}]}:{}),
      generationConfig:{temperature:0.1}
     });
-    return (await model.generateContent(prompt(str(name),activeUrls,pasted))).response;
+    return (await model.generateContent(requestText)).response;
    };
    let modelUsed=config.model,didFallback=false;
-   const generate=async(activeUrls)=>{
-    try{return await run(modelUsed,activeUrls);}
+   const generate=async(activeUrls,requestText)=>{
+    try{return await run(modelUsed,activeUrls,requestText);}
     catch(err){
      console.error('[PachiSpec] Firebase AI request failed',err);
      if(!mayFallbackTo35(err,modelUsed))throw Error(explainAIError(err,modelUsed));
      modelUsed='gemini-3.5-flash-lite';
      didFallback=true;
-     try{return await run(modelUsed,activeUrls);}
+     try{return await run(modelUsed,activeUrls,requestText);}
      catch(fallbackError){
       console.error('[PachiSpec] Gemini 3.5 fallback failed',fallbackError);
       throw Error(explainAIError(fallbackError,modelUsed));
      }
     }
    };
-   let result=await generate(urls);
+   let result=await generate(urls,prompt(str(name),urls,pasted));
    let statuses=urls.length?urlContextStatuses(result,urls):[];
    const failedInitial=statuses.filter(s=>s.status!=='URL_RETRIEVAL_STATUS_SUCCESS');
    let successfulUrls=statuses.filter(s=>s.status==='URL_RETRIEVAL_STATUS_SUCCESS').map(s=>s.url);
@@ -275,7 +298,7 @@
     throw Error('指定URLのページ本文を取得できませんでした（1件も読み取れません）。公開ページを確認するか、スペック文章だけで試してください。');
    // If some pages fail, regenerate using only retrieved URLs so inaccessible pages cannot influence the result.
    if(failedInitial.length&&successfulUrls.length){
-    result=await generate(successfulUrls);
+    result=await generate(successfulUrls,prompt(str(name),successfulUrls,pasted));
     const retried=urlContextStatuses(result,successfulUrls);
     if(retried.some(s=>s.status!=='URL_RETRIEVAL_STATUS_SUCCESS'))
      throw Error('取得できたURLの再照合中に読み取れないページが発生しました。URLを減らして再試行してください。');
@@ -289,6 +312,14 @@
     });
    }
    const spec=parseResponse(result?.text?.());
+   if(!spec.introductionDate&&successfulUrls.length&&!spec.conflicts.some(c=>/導入日|稼働日|設置日/.test(c))){
+    try{
+     const followup=await generate(successfulUrls,introductionDatePrompt(spec.researchedName||str(name),successfulUrls,pasted));
+     const verified=urlContextStatuses(followup,successfulUrls);
+     if(verified.every(item=>item.status==='URL_RETRIEVAL_STATUS_SUCCESS'))
+      spec.introductionDate=parseIntroductionDateResponse(followup?.text?.(),successfulUrls);
+    }catch(error){console.warn('[PachiSpec] Failed to recheck installation date',error);}
+   }
    if(!spec.researchedName&&!str(name))
     throw Error('資料から機種名を確認できませんでした。機種名が掲載されたURLか文章を入力してください。');
    // Only provider-confirmed, user-supplied URLs count as sources.
@@ -300,6 +331,11 @@
    for(const item of statuses.filter(s=>s.status!=='URL_RETRIEVAL_STATUS_SUCCESS'))
     warnings.push('ページを読み取れませんでした（'+item.status+'）: '+item.url);
    warnings.push(...spec.conflicts.map(message=>'資料の不一致: '+message));
+   if(!spec.introductionDate)warnings.push('ホール導入日を資料から確認できませんでした。記事の公開日などでは代用しません。');
+   for(const kind of ['special1','special2']){
+    const missing=spec.distributions[kind].filter(row=>!row.payout).length;
+    if(missing)warnings.push((kind==='special1'?'特図1':'特図2')+'の出玉が未確認の振り分けが'+missing+'件あります。数値が確定するまで出玉計算には使いません。');
+   }
    if(spec.basic.initialProbability===null)warnings.push('初当り確率が未確認です。');
    if(spec.basic.rushEntryRate===null)warnings.push('RUSH突入率が未確認です。');
    if(spec.basic.initialProbability!==null&&spec.basic.rushEntryRate!==null&&!spec.specEvidence.entryBasisConfirmed)
@@ -308,6 +344,6 @@
    return {spec,sources,statuses,sourceMode:urls.length?'url':'text',warnings,modelUsed};
   }};
  }
- root.PachiSpecAI={isConfigured,available,makeClient,normalizeResponse,parseResponse,prompt,explainAIError,urlContextStatus,urlContextStatuses,parseSourceUrls,normalizeIntroductionDate,normalizeDistributionPayout};
+ root.PachiSpecAI={isConfigured,available,makeClient,normalizeResponse,parseResponse,prompt,explainAIError,urlContextStatus,urlContextStatuses,parseSourceUrls,normalizeIntroductionDate,normalizeDistributionPayout,introductionDatePrompt,parseIntroductionDateResponse};
  if(typeof module!=='undefined'&&module.exports)module.exports=root.PachiSpecAI;
 })(globalThis);
