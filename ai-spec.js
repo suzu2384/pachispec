@@ -15,6 +15,29 @@
    !!c.firebase&&['apiKey','appId','projectId'].every(k=>!!str(c.firebase[k]))&&!!str(c.appCheckSiteKey);
  }
  const available=(c,protocol)=>['https:','http:'].includes(protocol)&&isConfigured(c);
+ function normalizeIntroductionDate(value){
+  const raw=str(value).normalize('NFKC').trim().replace(/^導入(?:開始)?日\s*[：:]\s*/,'');
+  const m=raw.match(/^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?\s*(?:\([月火水木金土日](?:曜日)?\))?$/);
+  if(!m)return '';
+  const y=Number(m[1]),month=Number(m[2]),d=Number(m[3]);
+  if(y<2000||y>2100||month<1||month>12||d<1||d>31)return '';
+  const date=new Date(Date.UTC(y,month-1,d));
+  if(date.getUTCFullYear()!==y||date.getUTCMonth()!==month-1||date.getUTCDate()!==d)return '';
+  return [String(y).padStart(4,'0'),String(month).padStart(2,'0'),String(d).padStart(2,'0')].join('-');
+ }
+ function normalizeDistributionPayout(value){
+  const raw=str(value);if(!raw)return {payout:'',detail:''};
+  const s=raw.normalize('NFKC').replace(/,/g,'').trim(),approx=/約\s*\d/.test(s);
+  if(/[～~〜∼α]|以上|以下|超|最大|最低|平均|可変|未確定|不明|ランダム|別途|上乗せ|追加出玉/.test(s))
+   return {payout:'',detail:raw};
+  if(/^\s*(?:約\s*)?\d+(?:\.\d+)?\s*(?:個|玉|発)?\s*$/.test(s)){
+   return {payout:(approx?'約':'')+Number(s.match(/\d+(?:\.\d+)?/)[0])+'個',detail:''};
+  }
+  if(/[×xX*＊]/.test(s))return {payout:'',detail:raw};
+  const counts=[...s.matchAll(/(\d+(?:\.\d+)?)\s*(?:個|玉|発)/g)];
+  if(counts.length!==1)return {payout:'',detail:raw};
+  return {payout:(approx?'約':'')+Number(counts[0][1])+'個',detail:''};
+ }
  function simpleRows(data,kind){
   return (Array.isArray(data)?data:[]).slice(0,40).flatMap(r=>{
    if(!r||typeof r!=='object')return [];
@@ -24,8 +47,11 @@
    }
    const label=str(r.label).slice(0,100);
    if(!label)return [];
-   return kind==='custom'?[{label,value:str(r.value).slice(0,240)}]:
-    [{label,rate:num(r.rate,0,100)===null?'':String(num(r.rate,0,100))+'%',payout:str(r.payout).slice(0,150)}];
+   if(kind==='custom')return [{label,value:str(r.value).slice(0,240)}];
+   const amount=normalizeDistributionPayout(r.payout);
+   const appendix=amount.detail&&!label.includes(amount.detail)?'（出玉表記: '+amount.detail.slice(0,90)+'）':'';
+   return [{label:(label+appendix).slice(0,240),
+    rate:num(r.rate,0,100)===null?'':String(num(r.rate,0,100))+'%',payout:amount.payout}];
   });
  }
  function validMode(raw){
@@ -56,7 +82,7 @@
   const spec={
    researchedName:str(raw.name).slice(0,180),manufacturer:str(raw.manufacturer).slice(0,100),
    type:['e','P'].includes(raw.type)?raw.type:null,lt:typeof raw.lt==='boolean'?raw.lt:null,
-   introductionDate:/^\d{4}-\d{2}-\d{2}$/.test(str(raw.introductionDate))?raw.introductionDate:'',
+   introductionDate:normalizeIntroductionDate(raw.introductionDate),
    series:str(raw.series).slice(0,120),
    basic:{initialProbability:num(b.initialProbability,0.000001),rushEntryRate:num(b.rushEntryRate,0,100),
     rushContinuationRate:num(b.rushContinuationRate,0,100),rushHitProbability:num(b.rushHitProbability,0.000001),
@@ -121,6 +147,11 @@
    '数字が食い違う場合は「同じ条件・同じ型式」かをまず調べ、払出と差玉・RUSHとLT・図柄揃いと合算の差を区別してください。',
    '同じ条件で矛盾する場合はどれも採用せず、該当するJSONフィールドをnullにしてconflicts配列へ値とURLを列挙してください。',
    'メーカー公式に明確な同一条件の数値がある場合は優先できますが、それでも条件や型式の不一致は採用しないでください。',
+   '【重要】各資料から日本のホール導入開始日・全国導入日・設置開始日・稼働開始日を明示的に探し、型式と一致する日付をintroductionDateにYYYY-MM-DDで返してください。',
+   '記事の公開日・更新日・検定日・メーカー発表日を導入日と混同しない。発売日はホール導入開始日と明示された場合のみ採用。月だけ・上旬/下旬・年が不明な日付は空文字。',
+   '【重要】特図1・特図2のpayoutには出玉の確定数値だけを「1500個」の形式で記入。RUSH・LT突入、時短、ラウンド数などの説明はlabelに分離。',
+   '例:「10R 1500個＋RUSH突入」→label「10R＋RUSH突入」、payout「1500個」。',
+   '可変出玉・範囲・複数候補・＋αの場合は固定値を捏造せず、payoutは空文字、説明はlabelに記入。',
    '初当り確率は1/○○の分母。RUSH突入率・継続率は0〜100の百分率。実質RUSH突入確率は出力不要（アプリ側で計算）。',
    '図柄揃いとチャージ込みの合算確率を混同しない。初当りとRUSH突入率の母集団を確認できた時だけentryBasisConfirmed=true。',
    '特図1と特図2の振り分けは別々。払出出球と差玉を混ぜない。振り分けrateは0〜100の数値。',
@@ -277,6 +308,6 @@
    return {spec,sources,statuses,sourceMode:urls.length?'url':'text',warnings,modelUsed};
   }};
  }
- root.PachiSpecAI={isConfigured,available,makeClient,normalizeResponse,parseResponse,prompt,explainAIError,urlContextStatus,urlContextStatuses,parseSourceUrls};
+ root.PachiSpecAI={isConfigured,available,makeClient,normalizeResponse,parseResponse,prompt,explainAIError,urlContextStatus,urlContextStatuses,parseSourceUrls,normalizeIntroductionDate,normalizeDistributionPayout};
  if(typeof module!=='undefined'&&module.exports)module.exports=root.PachiSpecAI;
 })(globalThis);
