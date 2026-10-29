@@ -219,7 +219,7 @@ test('AI import opens without a machine name, fills blank name and preserves exi
  assert.ok(!app.includes("showToast('先に機種名を入力してください')"));
  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
  assert.ok(html.includes('<textarea id="aiSpecReference"'));
- assert.ok(html.includes('v1.0.6'));
+ assert.ok(html.includes('v1.0.7'));
 });
 
 test('multiple source URLs are persisted and visible without replacing legacy single-URL fields',()=>{
@@ -313,4 +313,64 @@ test('URL installation date can be recovered with one focused second pass',async
 test('AI preview includes a date even if not available',()=>{
  const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
  assert.match(app,/row\('ホール導入日', spec\.introductionDate \|\| '未確認'\)/);
+});
+
+test('AI cannot override initial payout with a RUSH-inclusive overall expectation',()=>{
+ const imported=ai.normalizeResponse({
+  name:'eテスト',
+  basic:{initialProbability:319.7},
+  distributions:{
+   special1:[{label:'10R RUSH',rate:50,payout:'1500個'},{label:'3R 通常',rate:50,payout:'450個'}],
+   special2:[{label:'1500 RUSH',rate:100,payout:'9000個'}]
+  },
+  initialPayoutExpectation:{kind:'exact',value:13500,note:'RUSH込み総期待出玉'}
+ });
+ assert.equal(imported.initialPayoutExpectation.kind,'auto');
+ assert.equal(imported.initialPayoutExpectation.value,null);
+ assert.equal(imported.initialPayoutExpectation.note,'');
+ assert.ok(ai.prompt('eテスト',[],'初当り出玉').includes('RUSH・LT突入後の当り'));
+});
+test('initial payout value is strictly first-hit special1 distribution, not total RUSH payout',()=>{
+ const code=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ const start=code.indexOf('  function initialPayoutExpectation(machine) {');
+ const end=code.indexOf('  function formatPayoutExpectation(info) {',start);
+ assert.ok(start>0&&end>start);
+ const normalizePayoutExpectation=value=>({
+  kind:value?.kind||'auto',value:value?.value??null,note:value?.note||'',
+  origin:value?.origin==='manual'?'manual':''
+ });
+ const parseSpecNumber=v=>{
+  const match=String(v??'').replaceAll(',','').match(/-?\d+(?:\.\d+)?/);
+  return match?Number(match[0]):null;
+ };
+ const numberOrNull=v=>v==null||v===''?null:Number(v);
+ const calculate=new Function('normalizePayoutExpectation','parseSpecNumber','numberOrNull','PachiSpecModel',
+  code.slice(start,end)+'return initialPayoutExpectation;')(
+  normalizePayoutExpectation,parseSpecNumber,numberOrNull,require('../spec-model.js'));
+ const m={
+  specEvidence:{sourceUrl:'https://example.com'},
+  initialPayoutExpectation:{kind:'exact',value:18500,note:'RUSH含む可能性'},
+  distributions:{
+   special1:[{label:'10R RUSH',rate:'50%',payout:'1500個'},{label:'3R 通常',rate:'50%',payout:'450個'}],
+   special2:[{label:'連チャン',rate:'100%',payout:'9000個'}]
+  },
+  rushPayoutModel:{version:2},
+  basic:{initialPayout:25000}
+ };
+ const expected=calculate(m);
+ assert.equal(expected.value,975);
+ assert.equal(expected.kind,'exact');
+ assert.match(expected.note,/RUSH・LT中の出玉は含まない/);
+ assert.equal(calculate({...m,distributions:{special1:[]}}).value,null);
+ assert.equal(calculate({...m,initialPayoutExpectation:{kind:'exact',value:960,origin:'manual'}}).value,960);
+ assert.equal(calculate({...m,initialPayoutExpectation:{kind:'auto',value:null}}).value,975);
+ assert.equal(calculate({...m,distributions:{special1:[{label:'10R',rate:'90%',payout:'1500個'}]}}).value,null);
+});
+test('AI apply always uses automatic special1 mean, manual values explicitly carry provenance',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.ok(app.includes("state.editorPayoutManual = false;"));
+ assert.ok(app.includes("$('#initialPayoutKindInput').value = 'auto';"));
+ assert.ok(app.includes("origin: state.editorPayoutManual && $('#initialPayoutKindInput').value !== 'auto' ? 'manual' : ''"));
+ const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+ assert.match(html,/特図1の初当り分のみ/);
 });

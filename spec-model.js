@@ -18,7 +18,7 @@
       value += Number(row.rate) / 100 * parsed.value;
       approximate ||= parsed.approximate;
     }
-    return { kind: approximate ? 'estimate' : 'exact', value, note: '初当り振り分けから算出（入力した出球の単位・範囲に準拠）' };
+    return { kind: approximate ? 'estimate' : 'exact', value, note: '特図1の初当り振り分けのみで算出（RUSH・LT中の出玉は含まない）' };
   }
   function normalize(model) {
     return { ...model, version: 2, cap: 12000,

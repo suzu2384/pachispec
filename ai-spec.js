@@ -93,8 +93,8 @@
    specEvidence:{sourceUrl:link(e.sourceUrl),checkedAt:new Date().toISOString().slice(0,10),
     probabilityLabel:str(e.probabilityLabel).slice(0,120),entryBasisConfirmed:e.entryBasisConfirmed===true,
     payoutUnit:['payout','net'].includes(e.payoutUnit)?e.payoutUnit:'',note:str(e.note).slice(0,1400)},
-   initialPayoutExpectation:{kind:['exact','estimate','minimum'].includes(p.kind)?p.kind:'auto',
-    value:num(p.value,0,100000),note:str(p.note).slice(0,350)},
+   // Source reports may include post-RUSH totals: never let AI override a first-hit mean.
+   initialPayoutExpectation:{kind:'auto',value:null,note:''},
    rushPayoutModel:validMode(raw.rushPayoutModel),
    conflicts:(Array.isArray(raw.conflicts)?raw.conflicts:[]).filter(x=>typeof x==='string'&&x.trim()).slice(0,12).map(x=>x.trim().slice(0,350))
   };
@@ -156,7 +156,8 @@
    '図柄揃いとチャージ込みの合算確率を混同しない。初当りとRUSH突入率の母集団を確認できた時だけentryBasisConfirmed=true。',
    '特図1と特図2の振り分けは別々。払出出球と差玉を混ぜない。振り分けrateは0〜100の数値。',
    '出玉振り分け、導入日、メーカー、機種種別、LT、RUSH当り確率、RUSH継続率、状態遷移、その他のスペックも分かる範囲で。',
-   '出球期待値が資料に明記される時だけminimum/estimate/exactを使う。振り分け100%があればauto。',
+   '【初当り出球期待値】初当り1回で得る出玉だけが対象。RUSH・LT突入後の当り・連チャン出玉・合計期待出玉は絶対に含めない。',
+   'initialPayoutExpectationは必ずkind:"auto",value:null,note:""とし、特図1の振り分けからアプリ側で計算する。初当り出玉が不明な場合は推測しない。',
    'rushPayoutModelは各モードの確率、抽選回数、当り振り分け、全移行先が確実に判明した場合だけ記述し、不明ならnull。',
    'specEvidence.sourceUrlには資料の最も直接的なURL、probabilityLabelには確率の正式名称、noteには未確認条件を記入してください。',
    'JSONオブジェクトだけ出力（マークダウンなし）。すべての項目を用意し、不明な値はnull、空文字、空配列にする:',

@@ -338,7 +338,8 @@
     return {
       kind,
       value: numberOrNull(value?.value),
-      note: String(value?.note || '').trim()
+      note: String(value?.note || '').trim(),
+      origin: value?.origin === 'manual' ? 'manual' : ''
     };
   }
 
@@ -479,34 +480,24 @@
     return match ? Number(match[0]) : null;
   }
 
-  function calculatedPayoutExpectation(machine) {
-    const rows = machine.distributions?.special1 || [];
-    if (!rows.length) return null;
-    let totalRate = 0;
-    let totalPayout = 0;
-    for (const row of rows) {
-      const rate = parseSpecNumber(row.rate);
-      const payoutText = String(row.payout || '').replaceAll(',', '');
-      const numbers = payoutText.match(/\d+(?:\.\d+)?/g) || [];
-      const variable = /[～~〜＋+α]|平均|以上|以下|超/.test(payoutText) || numbers.length !== 1;
-      const payout = variable ? null : Number(numbers[0]);
-      if (rate === null || payout === null) return null;
-      totalRate += rate;
-      totalPayout += rate / 100 * payout;
-    }
-    return Math.abs(totalRate - 100) < 0.01 ? totalPayout : null;
-  }
-
   function initialPayoutExpectation(machine) {
     const saved = normalizePayoutExpectation(machine.initialPayoutExpectation);
-    if (machine.specEvidence && saved.kind === 'unavailable') return { ...saved, value: null };
-    if (machine.specEvidence && saved.kind === 'auto') return PachiSpecModel.initialExpectation((machine.distributions?.special1 || []).map(row => ({ ...row, rate: parseSpecNumber(row.rate) })));
-    if (saved.kind !== 'auto' && saved.kind !== 'unavailable' && saved.value !== null) return saved;
-    const calculated = calculatedPayoutExpectation(machine);
-    if (calculated !== null) return { kind: 'exact', value: calculated, note: '特図1振り分けから自動算出' };
-    const legacy = numberOrNull(machine.basic?.initialPayout);
-    if (legacy !== null) return { kind: 'estimate', value: legacy, note: '旧データから移行' };
-    return { kind: 'unavailable', value: null, note: saved.note };
+    // Manual overrides are explicit. Legacy AI-derived values without provenance must
+    // not override verified first-hit distribution calculations.
+    const manuallyEntered = saved.origin === 'manual' || !machine.specEvidence;
+    if(saved.kind === 'unavailable')return {...saved,value:null};
+    if(saved.kind !== 'auto' && saved.value !== null && manuallyEntered)return saved;
+
+    // Only the special1 (initial hit) distribution contributes here.
+    // Never use rushPayoutModel, special2, or AI-reported total payout averages.
+    const rows=(machine.distributions?.special1 || []).map(row=>({...row,rate:parseSpecNumber(row.rate)}));
+    const calculated=PachiSpecModel.initialExpectation(rows);
+    if(rows.length || machine.specEvidence)return calculated;
+
+    // Old hand-entered machines without a special1 distribution may retain old figures.
+    const legacy=numberOrNull(machine.basic?.initialPayout);
+    if(legacy !== null)return {kind:'estimate',value:legacy,note:'旧データから移行'};
+    return calculated;
   }
 
   function formatPayoutExpectation(info) {
@@ -997,9 +988,12 @@
     $('#rushHitProbabilityInput').value = machine?.basic.rushHitProbability ?? '';
     $('#rushHitTypeInput').value = machine?.basic.rushHitType || '実質当り確率';
     $('#rushHitNoteInput').value = machine?.basic.rushHitNote || '';
-    $('#initialPayoutKindInput').value = machine?.initialPayoutExpectation?.kind || 'auto';
-    $('#initialPayoutValueInput').value = machine?.initialPayoutExpectation?.value ?? '';
-    $('#initialPayoutNoteInput').value = machine?.initialPayoutExpectation?.note || '';
+    const savedPayout=normalizePayoutExpectation(machine?.initialPayoutExpectation);
+    const legacyAIValue=Boolean(machine?.specEvidence && savedPayout.kind !== 'auto' && savedPayout.kind !== 'unavailable' && savedPayout.origin !== 'manual');
+    state.editorPayoutManual=savedPayout.origin === 'manual';
+    $('#initialPayoutKindInput').value = legacyAIValue ? 'auto' : savedPayout.kind;
+    $('#initialPayoutValueInput').value = legacyAIValue ? '' : (savedPayout.value ?? '');
+    $('#initialPayoutNoteInput').value = legacyAIValue ? '以前のAI取得値を使わず、特図1の初当り振り分けから再計算' : savedPayout.note;
     $('#notesInput').value = machine?.notes || '';
     $('#ratingMemoInput').value = state.memos[machine?.id] || '';
     renderRepeater('special1', machine?.distributions.special1 || []);
@@ -1116,7 +1110,8 @@
     const expectation = {
       kind: $('#initialPayoutKindInput').value,
       value: $('#initialPayoutValueInput').value,
-      note: $('#initialPayoutNoteInput').value.trim()
+      note: $('#initialPayoutNoteInput').value.trim(),
+      origin: state.editorPayoutManual && $('#initialPayoutKindInput').value !== 'auto' ? 'manual' : ''
     };
     return normalizeMachine({
       id: existingId || crypto.randomUUID(),
@@ -1264,16 +1259,12 @@
         aiResearch.sourceMode==='text'?'AI読み取り元: 貼り付け資料（Web照合なし）':'']
         .filter(Boolean).join('\n').slice(0,4000)
     };
-    const expectation = spec.initialPayoutExpectation;
-    if(expectation.kind !== 'auto' && expectation.value !== null){
-      $('#initialPayoutKindInput').value = expectation.kind;
-      $('#initialPayoutValueInput').value = expectation.value;
-      $('#initialPayoutNoteInput').value = expectation.note;
-    }else if(spec.distributions.special1.length){
-      $('#initialPayoutKindInput').value = 'auto';
-      $('#initialPayoutValueInput').value = '';
-      $('#initialPayoutNoteInput').value = expectation.note;
-    }
+    // AI-reported averages may include RUSH/LT payouts; never import them here.
+    // Only the first-hit special1 distribution is used to calculate this field.
+    state.editorPayoutManual = false;
+    $('#initialPayoutKindInput').value = 'auto';
+    $('#initialPayoutValueInput').value = '';
+    $('#initialPayoutNoteInput').value = '特図1の初当り分のみを計算（RUSH・LT中の出玉は含まない）';
     updateRushPreview(); updateInitialPayoutPreview();
     ++aiRequestSerial;
     aiResearch = null;
@@ -1312,7 +1303,8 @@
       initialPayoutExpectation: {
         kind: $('#initialPayoutKindInput').value,
         value: $('#initialPayoutValueInput').value,
-        note: $('#initialPayoutNoteInput').value.trim()
+        note: $('#initialPayoutNoteInput').value.trim(),
+        origin: state.editorPayoutManual && $('#initialPayoutKindInput').value !== 'auto' ? 'manual' : ''
       }
     };
     $('#initialPayoutExpectationPreview').textContent = formatPayoutExpectation(initialPayoutExpectation(machine));
@@ -1961,9 +1953,13 @@
     handleStarClick(event);
   });
   $('#special1Rows').addEventListener('input', updateInitialPayoutPreview);
-  $('#initialPayoutKindInput').addEventListener('change', updateInitialPayoutPreview);
-  $('#initialPayoutValueInput').addEventListener('input', updateInitialPayoutPreview);
-  $('#initialPayoutNoteInput').addEventListener('input', updateInitialPayoutPreview);
+  const manuallyUpdatePayout = () => {
+    state.editorPayoutManual = $('#initialPayoutKindInput').value !== 'auto';
+    updateInitialPayoutPreview();
+  };
+  $('#initialPayoutKindInput').addEventListener('change', manuallyUpdatePayout);
+  $('#initialPayoutValueInput').addEventListener('input', manuallyUpdatePayout);
+  $('#initialPayoutNoteInput').addEventListener('input', manuallyUpdatePayout);
   $('#ratingForm').addEventListener('click', handleStarClick);
   $('#initialProbabilityInput').addEventListener('input', updateRushPreview);
   $('#rushEntryRateInput').addEventListener('input', updateRushPreview);
